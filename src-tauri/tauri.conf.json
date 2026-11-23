@@ -37,7 +37,8 @@
       "icons/icon.ico"
     ],
     "resources": [
-      "resources/*"
+      "resources/README.md",
+      "resources/soundfonts/SalamanderGrandPiano-V3-Lite.sf2"
     ]
   }
 }
