@@ -1,3 +1,5 @@
+import { freeplayNotes } from "@/engine/freeplayNotes";
+
 export class ActiveNotesBuffer {
   // 88 keys: 0..87 mapped from midi 21..108
   // Song playback layer: populated per frame by FallingNotes
@@ -35,6 +37,7 @@ export class ActiveNotesBuffer {
     if (idx < 0 || idx >= 88) return;
     this.liveHand[idx] = hand;
     this.liveVelocity[idx] = velocity;
+    freeplayNotes.noteOn(midi, hand, velocity);
   }
 
   clearLiveNote(midi: number): void {
@@ -42,11 +45,13 @@ export class ActiveNotesBuffer {
     if (idx < 0 || idx >= 88) return;
     this.liveHand[idx] = 0;
     this.liveVelocity[idx] = 0;
+    freeplayNotes.noteOff(midi);
   }
 
   clearAllLive(): void {
     this.liveHand.fill(0);
     this.liveVelocity.fill(0);
+    freeplayNotes.releaseAll();
   }
 
   getHand(keyIndex: number): number {

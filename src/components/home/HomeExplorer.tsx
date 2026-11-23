@@ -40,11 +40,11 @@ const SORT_OPTIONS: Array<{
   label: string;
   icon: React.ComponentType<{ className?: string }>;
 }> = [
-  { id: "name", label: "Name", icon: ArrowDownAZ },
-  { id: "recent", label: "Recently Played", icon: Clock },
-  { id: "added", label: "Date Added", icon: CalendarPlus },
-  { id: "duration", label: "Length", icon: Timer },
-];
+    { id: "name", label: "Name", icon: ArrowDownAZ },
+    { id: "recent", label: "Recently Played", icon: Clock },
+    { id: "added", label: "Date Added", icon: CalendarPlus },
+    { id: "duration", label: "Length", icon: Timer },
+  ];
 
 export const HomeExplorer: React.FC = () => {
   const rootFolder = useLibraryStore((s) => s.rootFolder);
@@ -227,9 +227,8 @@ export const HomeExplorer: React.FC = () => {
       <Popover open={sortDropdownOpen} onOpenChange={setSortDropdownOpen}>
         <PopoverTrigger asChild>
           <button
-            className={`h-7 px-3 rounded-full liquid-glass-btn flex items-center gap-1.5 text-xs transition-all cursor-pointer active:scale-95 ${
-              sortDropdownOpen ? "text-zinc-100 border-white/20" : "text-zinc-300 hover:text-white"
-            }`}
+            className={`h-7 px-3 rounded-full liquid-glass-btn flex items-center gap-1.5 text-xs transition-all cursor-pointer active:scale-95 ${sortDropdownOpen ? "text-zinc-100 border-white/20" : "text-zinc-300 hover:text-white"
+              }`}
             aria-label="Sort pieces"
           >
             <ArrowUpDown className="w-3 h-3 text-primary" />
@@ -254,11 +253,10 @@ export const HomeExplorer: React.FC = () => {
                   setSortBy(opt.id);
                   setSortDropdownOpen(false);
                 }}
-                className={`w-full flex items-center justify-between px-2.5 py-1.5 rounded-lg text-xs cursor-pointer transition-all ${
-                  isSelected
-                    ? "liquid-glass-segment-active text-zinc-100 font-medium"
-                    : "text-zinc-400 hover:text-zinc-200 hover:bg-white/[0.05]"
-                }`}
+                className={`w-full flex items-center justify-between px-2.5 py-1.5 rounded-lg text-xs cursor-pointer transition-all ${isSelected
+                  ? "liquid-glass-segment-active text-zinc-100 font-medium"
+                  : "text-zinc-400 hover:text-zinc-200 hover:bg-white/[0.05]"
+                  }`}
               >
                 <div className="flex items-center gap-2">
                   <Icon className={`w-3.5 h-3.5 ${isSelected ? "text-primary" : "text-zinc-400"}`} />
@@ -275,22 +273,20 @@ export const HomeExplorer: React.FC = () => {
       <div className="flex items-center p-0.5 rounded-full liquid-glass-btn">
         <button
           onClick={() => setLayoutMode("grid")}
-          className={`w-6 h-6 flex items-center justify-center rounded-full cursor-pointer liquid-glass-segment ${
-            layoutMode === "grid"
-              ? "liquid-glass-segment-active text-primary"
-              : "text-zinc-400 hover:text-zinc-200"
-          }`}
+          className={`w-6 h-6 flex items-center justify-center rounded-full cursor-pointer liquid-glass-segment ${layoutMode === "grid"
+            ? "liquid-glass-segment-active text-primary"
+            : "text-zinc-400 hover:text-zinc-200"
+            }`}
           aria-label="Grid View"
         >
           <LayoutGrid className="w-3.5 h-3.5" />
         </button>
         <button
           onClick={() => setLayoutMode("list")}
-          className={`w-6 h-6 flex items-center justify-center rounded-full cursor-pointer liquid-glass-segment ${
-            layoutMode === "list"
-              ? "liquid-glass-segment-active text-primary"
-              : "text-zinc-400 hover:text-zinc-200"
-          }`}
+          className={`w-6 h-6 flex items-center justify-center rounded-full cursor-pointer liquid-glass-segment ${layoutMode === "list"
+            ? "liquid-glass-segment-active text-primary"
+            : "text-zinc-400 hover:text-zinc-200"
+            }`}
           aria-label="List View"
         >
           <List className="w-3.5 h-3.5" />
@@ -300,7 +296,7 @@ export const HomeExplorer: React.FC = () => {
   );
 
   return (
-    <div className="fixed top-0 left-0 right-0 bottom-[18vh] z-10 bg-[#09090b]/96 backdrop-blur-md border-b border-white/[0.08] flex flex-col select-none overflow-hidden">
+    <div className="fixed top-0 left-0 right-0 bottom-[18vh] z-10 bg-gradient-to-b from-[#09090b]/84 via-[#09090b]/78 to-[#09090b]/58 backdrop-blur-md flex flex-col select-none overflow-hidden">
       {/* Transparent Floating Topbar */}
       <div className="relative h-12 px-4 sm:px-6 flex items-center justify-between gap-3 shrink-0">
         {/* Left: Clickable MIDI Root Folder Pill + Subfolder Breadcrumbs */}
@@ -346,11 +342,10 @@ export const HomeExplorer: React.FC = () => {
                 <ChevronRight className="w-3.5 h-3.5 text-zinc-600 shrink-0" />
                 <button
                   onClick={() => setCurrentFolderPath(targetPath)}
-                  className={`text-xs truncate max-w-[130px] transition-colors cursor-pointer ${
-                    isLast
-                      ? "text-zinc-100 font-medium"
-                      : "text-zinc-400 hover:text-zinc-100"
-                  }`}
+                  className={`text-xs truncate max-w-[130px] transition-colors cursor-pointer ${isLast
+                    ? "text-zinc-100 font-medium"
+                    : "text-zinc-400 hover:text-zinc-100"
+                    }`}
                 >
                   {crumb}
                 </button>
@@ -401,7 +396,7 @@ export const HomeExplorer: React.FC = () => {
       </div>
 
       {/* Main Scrollable Library Explorer */}
-      <ScrollArea className="flex-1 px-6 md:px-8 py-6">
+      <ScrollArea className="flex-1 px-6 md:px-8 py-6 pt-2">
         <div className="max-w-[1600px] mx-auto pb-12 space-y-8">
           {/* Empty State: No MIDI Folder */}
           {!rootFolder || songs.length === 0 ? (

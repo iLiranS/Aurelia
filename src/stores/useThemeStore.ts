@@ -20,6 +20,9 @@ export interface AppearanceSettingsJson {
   qwertyPlayEnabled?: boolean;
   previewStartMode?: "peak" | "start";
   previewAudioEnabled?: boolean;
+  keyboardVignette?: boolean;
+  stageGlowEnabled?: boolean;
+  showOctaveGuides?: boolean;
 }
 
 interface ThemeState {
@@ -37,6 +40,9 @@ interface ThemeState {
   qwertyPlayEnabled: boolean;
   previewStartMode: "peak" | "start";
   previewAudioEnabled: boolean;
+  keyboardVignette: boolean;
+  stageGlowEnabled: boolean;
+  showOctaveGuides: boolean;
 
   setPreset: (presetId: string) => void;
   setRightHandColor: (color: string) => void;
@@ -52,6 +58,9 @@ interface ThemeState {
   setQwertyPlayEnabled: (enabled: boolean) => void;
   setPreviewStartMode: (mode: "peak" | "start") => void;
   setPreviewAudioEnabled: (enabled: boolean) => void;
+  setKeyboardVignette: (enabled: boolean) => void;
+  setStageGlowEnabled: (enabled: boolean) => void;
+  setShowOctaveGuides: (show: boolean) => void;
   hydrateAppearance: (jsonStr: string) => void;
 }
 
@@ -73,6 +82,9 @@ function persistAppearanceDebounced(state: ThemeState) {
         qwertyPlayEnabled: state.qwertyPlayEnabled,
         previewStartMode: state.previewStartMode,
         previewAudioEnabled: state.previewAudioEnabled,
+        keyboardVignette: state.keyboardVignette,
+        stageGlowEnabled: state.stageGlowEnabled,
+        showOctaveGuides: state.showOctaveGuides,
       };
       await setAppSetting("appearance_v1", JSON.stringify(data));
     } catch (err) {
@@ -96,6 +108,9 @@ export const useThemeStore = create<ThemeState>((set, get) => ({
   qwertyPlayEnabled: false,
   previewStartMode: "peak",
   previewAudioEnabled: true,
+  keyboardVignette: true,
+  stageGlowEnabled: true,
+  showOctaveGuides: true,
 
   setPreset: (presetId) => {
     const found = THEME_PRESETS.find((p) => p.id === presetId);
@@ -179,6 +194,21 @@ export const useThemeStore = create<ThemeState>((set, get) => ({
     persistAppearanceDebounced(get());
   },
 
+  setKeyboardVignette: (keyboardVignette) => {
+    set({ keyboardVignette });
+    persistAppearanceDebounced(get());
+  },
+
+  setStageGlowEnabled: (stageGlowEnabled) => {
+    set({ stageGlowEnabled });
+    persistAppearanceDebounced(get());
+  },
+
+  setShowOctaveGuides: (showOctaveGuides) => {
+    set({ showOctaveGuides });
+    persistAppearanceDebounced(get());
+  },
+
   hydrateAppearance: (jsonStr: string) => {
     try {
       const parsed = JSON.parse(jsonStr) as Partial<AppearanceSettingsJson>;
@@ -221,6 +251,9 @@ export const useThemeStore = create<ThemeState>((set, get) => ({
           previewStartMode: parsed.previewStartMode ?? state.previewStartMode,
           previewAudioEnabled:
             parsed.previewAudioEnabled ?? state.previewAudioEnabled,
+          keyboardVignette: parsed.keyboardVignette ?? state.keyboardVignette,
+          stageGlowEnabled: parsed.stageGlowEnabled ?? state.stageGlowEnabled,
+          showOctaveGuides: parsed.showOctaveGuides ?? state.showOctaveGuides,
         };
       });
     } catch (err) {

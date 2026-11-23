@@ -7,6 +7,7 @@ import { useThemeStore } from "@/stores/useThemeStore";
 import { useViewStore } from "@/stores/useViewStore";
 import { playbackClock } from "@/engine/playbackClock";
 import { activeNotes } from "@/engine/activeNotes";
+import { freeplayNotes } from "@/engine/freeplayNotes";
 import { getKeyByMidi, resolveNoteHand } from "@/engine/pianoLayout";
 import { createNoteShaderMaterial } from "./noteShader";
 import type { MidiNote } from "@/types/midi";
@@ -88,9 +89,120 @@ export const FallingNotes: React.FC = () => {
     // In Home view, waterfall is hidden behind HomeExplorer, and ListPreviewDriver controls activeNotes
     const viewMode = useViewStore.getState().viewMode;
     if (viewMode === "home") {
+      activeNotes.clearSong();
       if (mesh.count > 0) {
         mesh.count = 0;
         mesh.instanceMatrix.needsUpdate = true;
+      }
+      return;
+    }
+
+    const { rightHandColor, leftHandColor, lookaheadSec } =
+      useThemeStore.getState();
+
+    // Clear song active keys buffer for this frame
+    activeNotes.clearSong();
+
+    rightThreeColor.set(rightHandColor);
+    leftThreeColor.set(leftHandColor);
+
+    // Waterfall: Y=18 (hit line) to Y=100 (top). Total waterfall height = 82
+    const pixelsPerSec = 82 / Math.max(0.5, lookaheadSec);
+
+    const pushNoteInstance = (
+      count: number,
+      midi: number,
+      visibleBottom: number,
+      visibleTop: number,
+      hand: 1 | 2,
+      isHandActive: boolean,
+      isStriking: boolean,
+      anchorBottomToHitLine: boolean
+    ): number => {
+      if (count >= MAX_VISIBLE_NOTES) return count;
+      const key = getKeyByMidi(midi);
+      if (!key) return count;
+
+      const rawHeight = visibleTop - visibleBottom;
+      const noteHeight = Math.max(0.25, rawHeight);
+      const centerY =
+        anchorBottomToHitLine && rawHeight < 0.25
+          ? 18 + noteHeight * 0.5
+          : (visibleBottom + visibleTop) * 0.5;
+      const noteWidth = key.width * 0.88;
+      const z = key.isBlack ? 0.35 : 0.25;
+
+      tempObject.position.set(key.centerX, centerY, z);
+      tempObject.scale.set(noteWidth, noteHeight, 1);
+      tempObject.updateMatrix();
+      mesh.setMatrixAt(count, tempObject.matrix);
+
+      const dimsOffset = count * 2;
+      noteDimsArray[dimsOffset] = noteWidth;
+      noteDimsArray[dimsOffset + 1] = noteHeight;
+
+      const baseColor = hand === 1 ? rightThreeColor : leftThreeColor;
+      const colorOffset = count * 3;
+
+      if (!isHandActive) {
+        // Ghosted appearance: faint 18% tint of the hand color so it's subtly visible without distracting
+        tempColor.copy(baseColor).multiplyScalar(0.18);
+        noteStrikeArray[count] = 0.0;
+      } else {
+        noteStrikeArray[count] = isStriking ? 1.0 : 0.0;
+        if (key.isBlack) {
+          tempColor.copy(baseColor).multiplyScalar(0.86);
+        } else {
+          tempColor.copy(baseColor);
+        }
+      }
+
+      noteColorArray[colorOffset] = tempColor.r;
+      noteColorArray[colorOffset + 1] = tempColor.g;
+      noteColorArray[colorOffset + 2] = tempColor.b;
+
+      return count + 1;
+    };
+
+    if (viewMode === "freeplay") {
+      const now = performance.now() / 1000;
+      freeplayNotes.prune(now - Math.max(0.5, lookaheadSec) - 0.1);
+      const liveNotes = freeplayNotes.getNotes();
+
+      let count = 0;
+      for (let i = 0; i < liveNotes.length; i++) {
+        const note = liveNotes[i];
+        const isHeld = note.endSec === null;
+        const bottomY = isHeld ? 18 : 18 + (now - note.endSec!) * pixelsPerSec;
+        const topY = 18 + (now - note.startSec) * pixelsPerSec;
+
+        const visibleBottom = Math.max(18, bottomY);
+        const visibleTop = Math.min(100, topY);
+        if (visibleTop <= visibleBottom) {
+          continue;
+        }
+
+        count = pushNoteInstance(
+          count,
+          note.midi,
+          visibleBottom,
+          visibleTop,
+          note.hand,
+          true,
+          isHeld,
+          isHeld
+        );
+        if (count >= MAX_VISIBLE_NOTES) {
+          break;
+        }
+      }
+
+      mesh.count = count;
+      mesh.instanceMatrix.needsUpdate = true;
+      if (count > 0) {
+        dimsAttr.needsUpdate = true;
+        colorAttr.needsUpdate = true;
+        strikeAttr.needsUpdate = true;
       }
       return;
     }
@@ -104,11 +216,6 @@ export const FallingNotes: React.FC = () => {
       splitPointMidi,
       useSplitPoint,
     } = usePlaybackStore.getState();
-    const { rightHandColor, leftHandColor, lookaheadSec } =
-      useThemeStore.getState();
-
-    // Clear active keys buffer for this frame
-    activeNotes.clearSong();
 
     if (!activeSong || activeSong.notes.length === 0) {
       if (mesh.count > 0) {
@@ -118,11 +225,6 @@ export const FallingNotes: React.FC = () => {
       return;
     }
 
-    rightThreeColor.set(rightHandColor);
-    leftThreeColor.set(leftHandColor);
-
-    // Waterfall: Y=18 (hit line) to Y=100 (top). Total waterfall height = 82
-    const pixelsPerSec = 82 / Math.max(0.5, lookaheadSec);
     const notes = activeSong.notes;
 
     // Search window: notes starting up to 20s prior to now (for long sustained notes)
@@ -177,48 +279,17 @@ export const FallingNotes: React.FC = () => {
         continue;
       }
 
-      const key = getKeyByMidi(note.midi);
-      if (!key) {
-        continue;
-      }
-
-      const noteHeight = Math.max(0.25, visibleTop - visibleBottom);
-      const centerY = (visibleBottom + visibleTop) / 2;
-      const noteWidth = key.width * 0.88;
-      const z = key.isBlack ? 0.35 : 0.25;
-
-      tempObject.position.set(key.centerX, centerY, z);
-      tempObject.scale.set(noteWidth, noteHeight, 1);
-      tempObject.updateMatrix();
-      mesh.setMatrixAt(count, tempObject.matrix);
-
-      const dimsOffset = count * 2;
-      noteDimsArray[dimsOffset] = noteWidth;
-      noteDimsArray[dimsOffset + 1] = noteHeight;
-
-      const baseColor = hand === "right" ? rightThreeColor : leftThreeColor;
-      const colorOffset = count * 3;
-
-      if (!isHandActive) {
-        // Ghosted appearance: faint 18% tint of the hand color so it's subtly visible without distracting
-        tempColor.copy(baseColor).multiplyScalar(0.18);
-        noteStrikeArray[count] = 0.0;
-      } else {
-        const isStrikingHitLine = note.startSec <= now && noteEndSec >= now;
-        noteStrikeArray[count] = isStrikingHitLine ? 1.0 : 0.0;
-
-        if (key.isBlack) {
-          tempColor.copy(baseColor).multiplyScalar(0.86);
-        } else {
-          tempColor.copy(baseColor);
-        }
-      }
-
-      noteColorArray[colorOffset] = tempColor.r;
-      noteColorArray[colorOffset + 1] = tempColor.g;
-      noteColorArray[colorOffset + 2] = tempColor.b;
-
-      count++;
+      const isStrikingHitLine = note.startSec <= now && noteEndSec >= now;
+      count = pushNoteInstance(
+        count,
+        note.midi,
+        visibleBottom,
+        visibleTop,
+        hand === "right" ? 1 : 2,
+        isHandActive,
+        isStrikingHitLine,
+        false
+      );
       if (count >= MAX_VISIBLE_NOTES) {
         break;
       }

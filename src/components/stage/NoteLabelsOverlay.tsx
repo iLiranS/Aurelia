@@ -4,6 +4,7 @@ import { useViewStore } from "@/stores/useViewStore";
 import { useLibraryStore } from "@/stores/useLibraryStore";
 import { usePlaybackStore } from "@/stores/usePlaybackStore";
 import { playbackClock } from "@/engine/playbackClock";
+import { freeplayNotes } from "@/engine/freeplayNotes";
 import { getKeyByMidi, getNoteLetter, resolveNoteHand } from "@/engine/pianoLayout";
 import type { MidiNote } from "@/types/midi";
 
@@ -61,11 +62,73 @@ const NoteLabelsCanvas: React.FC = () => {
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       ctx.clearRect(0, 0, cssW, cssH);
 
+      const { lookaheadSec } = useThemeStore.getState();
+      const pixelsPerSec = 82 / Math.max(0.5, lookaheadSec);
+
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+
+      let lastFontSize = -1;
+      let lastIsActive: boolean | null = null;
+
+      const drawNoteLabel = (
+        midi: number,
+        visibleBottom: number,
+        visibleTop: number,
+        isHandActive: boolean
+      ) => {
+        const key = getKeyByMidi(midi);
+        if (!key) return;
+
+        const barX = (key.centerX / 52) * cssW;
+        const barW = ((key.width * 0.88) / 52) * cssW;
+        const barBottomPx = cssH * (1 - (visibleBottom - 18) / 82);
+        const barTopPx = cssH * (1 - (visibleTop - 18) / 82);
+        const barH = barBottomPx - barTopPx;
+
+        if (barH < 16 || barW < 12) return;
+
+        const fontSize = Math.min(11, Math.max(8, Math.floor(barW * 0.58)));
+        if (fontSize !== lastFontSize) {
+          ctx.font = `600 ${fontSize}px ui-sans-serif, system-ui, sans-serif`;
+          lastFontSize = fontSize;
+        }
+
+        if (isHandActive !== lastIsActive) {
+          ctx.fillStyle = isHandActive
+            ? "rgba(9, 9, 11, 0.86)"
+            : "rgba(255, 255, 255, 0.45)";
+          lastIsActive = isHandActive;
+        }
+
+        const textY =
+          barH > 26 ? barBottomPx - 10 : (barTopPx + barBottomPx) * 0.5;
+        ctx.fillText(getNoteLetter(midi), barX, textY);
+      };
+
+      const viewMode = useViewStore.getState().viewMode;
+      if (viewMode === "freeplay") {
+        const now = performance.now() / 1000;
+        const liveNotes = freeplayNotes.getNotes();
+        for (let i = 0; i < liveNotes.length; i++) {
+          const note = liveNotes[i];
+          const bottomY =
+            note.endSec === null ? 18 : 18 + (now - note.endSec) * pixelsPerSec;
+          const topY = 18 + (now - note.startSec) * pixelsPerSec;
+          const visibleBottom = Math.max(18, bottomY);
+          const visibleTop = Math.min(100, topY);
+          if (visibleTop <= visibleBottom) continue;
+          drawNoteLabel(note.midi, visibleBottom, visibleTop, true);
+        }
+        return;
+      }
+
+      if (viewMode !== "song") return;
+
       const activeSong = useLibraryStore.getState().activeSong;
       if (!activeSong || activeSong.notes.length === 0) return;
 
       const now = playbackClock.getTime();
-      const { lookaheadSec } = useThemeStore.getState();
       const {
         rightHandActive,
         leftHandActive,
@@ -74,15 +137,8 @@ const NoteLabelsCanvas: React.FC = () => {
         useSplitPoint,
       } = usePlaybackStore.getState();
 
-      const pixelsPerSec = 82 / Math.max(0.5, lookaheadSec);
       const notes = activeSong.notes;
       const startIndex = findStartIndex(notes, Math.max(0, now - 20));
-
-      ctx.textAlign = "center";
-      ctx.textBaseline = "middle";
-
-      let lastFontSize = -1;
-      let lastIsActive: boolean | null = null;
 
       for (let i = startIndex; i < notes.length; i++) {
         const note = notes[i];
@@ -113,41 +169,11 @@ const NoteLabelsCanvas: React.FC = () => {
           continue;
         }
 
-        const key = getKeyByMidi(note.midi);
-        if (!key) {
-          continue;
-        }
-
-        const barX = (key.centerX / 52) * cssW;
-        const barW = ((key.width * 0.88) / 52) * cssW;
-        const barBottomPx = cssH * (1 - (visibleBottom - 18) / 82);
-        const barTopPx = cssH * (1 - (visibleTop - 18) / 82);
-        const barH = barBottomPx - barTopPx;
-
-        if (barH < 16 || barW < 12) {
-          continue;
-        }
-
         const isHandActive =
           (hand === "right" && rightHandActive) ||
           (hand === "left" && leftHandActive);
 
-        const fontSize = Math.min(11, Math.max(8, Math.floor(barW * 0.58)));
-        if (fontSize !== lastFontSize) {
-          ctx.font = `600 ${fontSize}px ui-sans-serif, system-ui, sans-serif`;
-          lastFontSize = fontSize;
-        }
-
-        if (isHandActive !== lastIsActive) {
-          ctx.fillStyle = isHandActive
-            ? "rgba(9, 9, 11, 0.86)"
-            : "rgba(255, 255, 255, 0.45)";
-          lastIsActive = isHandActive;
-        }
-
-        const textY =
-          barH > 26 ? barBottomPx - 10 : (barTopPx + barBottomPx) * 0.5;
-        ctx.fillText(getNoteLetter(note.midi), barX, textY);
+        drawNoteLabel(note.midi, visibleBottom, visibleTop, isHandActive);
       }
     };
 
@@ -171,7 +197,7 @@ export const NoteLabelsOverlay: React.FC = () => {
   const showNoteLabels = useThemeStore((s) => s.showNoteLabels);
   const viewMode = useViewStore((s) => s.viewMode);
 
-  if (!showNoteLabels || viewMode !== "song") {
+  if (!showNoteLabels || (viewMode !== "song" && viewMode !== "freeplay")) {
     return null;
   }
 
