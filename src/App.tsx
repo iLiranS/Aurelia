@@ -6,6 +6,7 @@ import { HomeExplorer } from "@/components/home/HomeExplorer";
 import { TransportDock } from "@/components/hud/TransportDock";
 import { PianoStage } from "@/components/stage/PianoStage";
 import { ShortcutManagerDialog } from "@/components/hud/ShortcutManagerDialog";
+import { RecordingReviewDialog } from "@/components/hud/RecordingReviewDialog";
 import { Toaster } from "@/components/ui/toast";
 import { usePersistSongSettings } from "@/hooks/usePersistSongSettings";
 import { useQwertyPiano } from "@/hooks/useQwertyPiano";
@@ -120,6 +121,7 @@ export const App: React.FC = () => {
           setRootFolder(root);
           const songs = await getLibrarySongs();
           setSongs(songs);
+          await useLibraryStore.getState().refreshFolders();
         }
 
         // Hydrate saved studio appearance settings from SQLite
@@ -211,6 +213,7 @@ export const App: React.FC = () => {
         const unlistenFolder = await listen("library:updated", async () => {
           const updatedSongs = await getLibrarySongs();
           setSongs(updatedSongs);
+          await useLibraryStore.getState().refreshFolders();
         });
         unlistenFolderFn = unlistenFolder;
 
@@ -301,6 +304,9 @@ export const App: React.FC = () => {
 
         {/* Global Shortcut Manager Dialog */}
         <ShortcutManagerDialog />
+
+        {/* Free Play Recording Review Dialog */}
+        <RecordingReviewDialog />
 
         {/* Top-Right Floating Toasts */}
         <Toaster />

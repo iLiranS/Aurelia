@@ -16,10 +16,23 @@ import {
   CalendarPlus,
   Timer,
   Check,
+  FolderPlus,
+  Mic,
+  Pencil,
+  Trash2,
 } from "lucide-react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Popover, PopoverAnchor, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { useToastStore } from "@/components/ui/toast";
 import { AppActionButtons } from "@/components/hud/AppActionButtons";
 import { SongPreviewCard } from "@/components/home/SongPreviewCard";
 import { SongListRow } from "@/components/home/SongListRow";
@@ -32,6 +45,9 @@ import {
   loadSong,
   toggleFavorite as apiToggleFavorite,
   audioLoadSong,
+  createLibraryFolder,
+  renameLibraryFolder,
+  deleteLibraryFolder,
 } from "@/services/tauriApi";
 import type { SongSummary } from "@/types/midi";
 
@@ -49,6 +65,7 @@ const SORT_OPTIONS: Array<{
 export const HomeExplorer: React.FC = () => {
   const rootFolder = useLibraryStore((s) => s.rootFolder);
   const songs = useLibraryStore((s) => s.songs);
+  const libraryFolders = useLibraryStore((s) => s.folders);
   const searchQuery = useLibraryStore((s) => s.searchQuery);
   const setSearchQuery = useLibraryStore((s) => s.setSearchQuery);
   const setActiveSong = useLibraryStore((s) => s.setActiveSong);
@@ -58,6 +75,32 @@ export const HomeExplorer: React.FC = () => {
   const selectFolder = useLibraryStore((s) => s.selectFolder);
 
   const [sortDropdownOpen, setSortDropdownOpen] = useState(false);
+  const [newFolderOpen, setNewFolderOpen] = useState(false);
+  const [newFolderName, setNewFolderName] = useState("");
+  const [newFolderError, setNewFolderError] = useState<string | null>(null);
+  const [isCreatingFolder, setIsCreatingFolder] = useState(false);
+
+  const [folderContext, setFolderContext] = useState<{
+    name: string;
+    relPath: string;
+    x: number;
+    y: number;
+  } | null>(null);
+  const [renameFolderTarget, setRenameFolderTarget] = useState<{
+    name: string;
+    relPath: string;
+  } | null>(null);
+  const [renameFolderValue, setRenameFolderValue] = useState("");
+  const [renameFolderError, setRenameFolderError] = useState<string | null>(null);
+  const [isRenamingFolder, setIsRenamingFolder] = useState(false);
+
+  const [deleteFolderTarget, setDeleteFolderTarget] = useState<{
+    name: string;
+    relPath: string;
+  } | null>(null);
+  const [deleteFolderError, setDeleteFolderError] = useState<string | null>(null);
+  const [isDeletingFolder, setIsDeletingFolder] = useState(false);
+
   const searchInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -190,8 +233,20 @@ export const HomeExplorer: React.FC = () => {
       return songFolder === normCurrent;
     });
 
-    // Immediate child folders relative to normCurrent
+    // Immediate child folders relative to normCurrent (include empty folders from disk)
     const folderMap = new Map<string, number>(); // immediate folder name -> total recursive count
+    for (const rel of libraryFolders) {
+      const cleanRel = rel.replace(/\\/g, "/").replace(/^\/+|\/+$/g, "");
+      if (!cleanRel) continue;
+      if (!normCurrent) {
+        const topFolder = cleanRel.split("/")[0];
+        if (!folderMap.has(topFolder)) folderMap.set(topFolder, 0);
+      } else if (cleanRel.startsWith(normCurrent + "/")) {
+        const sub = cleanRel.slice(normCurrent.length + 1);
+        const childFolder = sub.split("/")[0];
+        if (!folderMap.has(childFolder)) folderMap.set(childFolder, 0);
+      }
+    }
     for (const s of songs) {
       const songFolder = s.folder.replace(/\\/g, "/").replace(/^\/+|\/+$/g, "");
       if (!songFolder) continue;
@@ -217,7 +272,75 @@ export const HomeExplorer: React.FC = () => {
       folderSongs: directSongs,
       searchResults: searchRes,
     };
-  }, [songs, currentFolderPath, searchQuery]);
+  }, [songs, libraryFolders, currentFolderPath, searchQuery]);
+
+  const recordingsFolder = !currentFolderPath
+    ? immediateFolders.find((f) => f.name === "Recordings")
+    : undefined;
+
+  const handleCreateFolder = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (isCreatingFolder || !newFolderName.trim()) return;
+    setIsCreatingFolder(true);
+    setNewFolderError(null);
+    try {
+      await createLibraryFolder(currentFolderPath, newFolderName.trim());
+      setNewFolderOpen(false);
+      setNewFolderName("");
+      useToastStore.getState().showToast({
+        id: "folder-created",
+        title: "Folder Created",
+        description: newFolderName.trim(),
+        durationMs: 2000,
+      });
+    } catch (err) {
+      setNewFolderError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setIsCreatingFolder(false);
+    }
+  };
+
+  const handleConfirmRenameFolder = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!renameFolderTarget || isRenamingFolder || !renameFolderValue.trim()) return;
+    setIsRenamingFolder(true);
+    setRenameFolderError(null);
+    try {
+      await renameLibraryFolder(renameFolderTarget.relPath, renameFolderValue.trim());
+      setRenameFolderTarget(null);
+      useToastStore.getState().showToast({
+        id: "folder-renamed",
+        title: "Folder Renamed",
+        description: renameFolderValue.trim(),
+        durationMs: 2000,
+      });
+    } catch (err) {
+      setRenameFolderError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setIsRenamingFolder(false);
+    }
+  };
+
+  const handleConfirmDeleteFolder = async () => {
+    if (!deleteFolderTarget || isDeletingFolder) return;
+    setIsDeletingFolder(true);
+    setDeleteFolderError(null);
+    try {
+      await deleteLibraryFolder(deleteFolderTarget.relPath);
+      const deletedName = deleteFolderTarget.name;
+      setDeleteFolderTarget(null);
+      useToastStore.getState().showToast({
+        id: "folder-deleted",
+        title: "Folder Deleted",
+        description: deletedName,
+        durationMs: 2200,
+      });
+    } catch (err) {
+      setDeleteFolderError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setIsDeletingFolder(false);
+    }
+  };
 
   const hasSearch = searchQuery.trim().length > 0;
 
@@ -352,6 +475,27 @@ export const HomeExplorer: React.FC = () => {
               </React.Fragment>
             );
           })}
+
+          {recordingsFolder && (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button
+                  onClick={() => setCurrentFolderPath("Recordings")}
+                  className="h-7 px-2.5 rounded-full liquid-glass-btn flex items-center gap-1.5 text-xs text-zinc-300 hover:text-white transition-all cursor-pointer shrink-0 ml-1"
+                  aria-label="Open Recordings Folder"
+                >
+                  <Mic className="w-3 h-3 text-rose-400" />
+                  <span className="font-medium">Recordings</span>
+                  <span className="text-[10px] font-mono tabular-nums text-zinc-400">
+                    {recordingsFolder.count}
+                  </span>
+                </button>
+              </TooltipTrigger>
+              <TooltipContent side="bottom">
+                <span>Jump to Free Play Recordings</span>
+              </TooltipContent>
+            </Tooltip>
+          )}
         </div>
 
         {/* Center: Search Pieces with Mod+K Shortcut Badge */}
@@ -470,6 +614,18 @@ export const HomeExplorer: React.FC = () => {
                       FOLDERS
                     </span>
                     <div className="flex-1 h-px bg-white/[0.07]" />
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setNewFolderName("");
+                        setNewFolderError(null);
+                        setNewFolderOpen(true);
+                      }}
+                      className="h-7 px-2.5 rounded-full liquid-glass-btn flex items-center gap-1.5 text-xs text-zinc-300 hover:text-white transition-all cursor-pointer active:scale-95"
+                    >
+                      <FolderPlus className="w-3.5 h-3.5 text-primary" />
+                      <span>New Folder</span>
+                    </button>
                   </div>
 
                   <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-3">
@@ -477,6 +633,19 @@ export const HomeExplorer: React.FC = () => {
                       <button
                         key={f.name}
                         onClick={() => navigateToFolder(f.name)}
+                        onContextMenu={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          const relPath = currentFolderPath
+                            ? `${currentFolderPath}/${f.name}`
+                            : f.name;
+                          setFolderContext({
+                            name: f.name,
+                            relPath,
+                            x: e.clientX,
+                            y: e.clientY,
+                          });
+                        }}
                         className="group flex items-center justify-between p-3 rounded-xl liquid-glass-btn cursor-pointer transition-all hover:border-white/20 active:scale-[0.98] text-left"
                       >
                         <div className="flex items-center gap-2.5 min-w-0">
@@ -507,6 +676,20 @@ export const HomeExplorer: React.FC = () => {
                       LIBRARY ({folderSongs.length})
                     </span>
                     <div className="flex-1 h-px bg-white/[0.07]" />
+                    {immediateFolders.length === 0 && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setNewFolderName("");
+                          setNewFolderError(null);
+                          setNewFolderOpen(true);
+                        }}
+                        className="h-7 px-2.5 rounded-full liquid-glass-btn flex items-center gap-1.5 text-xs text-zinc-300 hover:text-white transition-all cursor-pointer active:scale-95"
+                      >
+                        <FolderPlus className="w-3.5 h-3.5 text-primary" />
+                        <span>New Folder</span>
+                      </button>
+                    )}
                     {libraryControls}
                   </div>
 
@@ -539,6 +722,204 @@ export const HomeExplorer: React.FC = () => {
           )}
         </div>
       </ScrollArea>
+
+      {/* New Folder Dialog */}
+      <Dialog open={newFolderOpen} onOpenChange={setNewFolderOpen}>
+        <DialogContent className="max-w-sm">
+          <form onSubmit={handleCreateFolder}>
+            <DialogHeader>
+              <DialogTitle>New Folder</DialogTitle>
+              <DialogDescription>
+                Create a folder inside{" "}
+                <span className="text-zinc-200 font-medium">
+                  {currentFolderPath || rootFolderName}
+                </span>
+                .
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-3">
+              <input
+                type="text"
+                value={newFolderName}
+                onChange={(e) => setNewFolderName(e.target.value)}
+                placeholder="Folder name"
+                autoFocus
+                className="w-full h-9 px-3 rounded-xl bg-black/30 border border-white/[0.12] text-sm text-zinc-100 placeholder:text-zinc-500 focus:outline-none focus:border-primary/60"
+              />
+              {newFolderError && (
+                <p className="text-xs text-rose-300">{newFolderError}</p>
+              )}
+            </div>
+            <DialogFooter>
+              <button
+                type="button"
+                onClick={() => setNewFolderOpen(false)}
+                className="h-8 px-3 rounded-xl liquid-glass-btn text-xs text-zinc-300 hover:text-white cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={isCreatingFolder || !newFolderName.trim()}
+                className="h-8 px-3.5 rounded-xl liquid-glass-accent text-xs font-semibold text-primary cursor-pointer disabled:opacity-50"
+              >
+                {isCreatingFolder ? "Creating…" : "Create"}
+              </button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Folder Right-Click Context Menu */}
+      <Popover
+        open={folderContext !== null}
+        onOpenChange={(open) => {
+          if (!open) setFolderContext(null);
+        }}
+      >
+        {folderContext && (
+          <PopoverAnchor asChild>
+            <div
+              style={{
+                position: "fixed",
+                left: folderContext.x,
+                top: folderContext.y,
+                width: 1,
+                height: 1,
+                pointerEvents: "none",
+              }}
+            />
+          </PopoverAnchor>
+        )}
+        <PopoverContent
+          side="bottom"
+          align="start"
+          className="w-44 p-1.5 space-y-0.5 liquid-glass-popover rounded-xl shadow-2xl"
+        >
+          <button
+            type="button"
+            onClick={() => {
+              if (!folderContext) return;
+              const target = { name: folderContext.name, relPath: folderContext.relPath };
+              setFolderContext(null);
+              setRenameFolderValue(target.name);
+              setRenameFolderError(null);
+              setRenameFolderTarget(target);
+            }}
+            className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-xs text-zinc-200 hover:text-white hover:bg-white/[0.08] cursor-pointer transition-colors text-left"
+          >
+            <Pencil className="w-3.5 h-3.5 text-zinc-400" />
+            <span>Rename Folder…</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              if (!folderContext) return;
+              const target = { name: folderContext.name, relPath: folderContext.relPath };
+              setFolderContext(null);
+              setDeleteFolderError(null);
+              setDeleteFolderTarget(target);
+            }}
+            className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-xs text-rose-300 hover:text-rose-200 hover:bg-rose-500/15 cursor-pointer transition-colors text-left"
+          >
+            <Trash2 className="w-3.5 h-3.5 text-rose-400" />
+            <span>Delete Folder…</span>
+          </button>
+        </PopoverContent>
+      </Popover>
+
+      {/* Rename Folder Dialog */}
+      <Dialog
+        open={renameFolderTarget !== null}
+        onOpenChange={(open) => {
+          if (!open) setRenameFolderTarget(null);
+        }}
+      >
+        <DialogContent className="max-w-sm">
+          <form onSubmit={handleConfirmRenameFolder}>
+            <DialogHeader>
+              <DialogTitle>Rename Folder</DialogTitle>
+              <DialogDescription>
+                Enter a new name for{" "}
+                <span className="text-zinc-200 font-medium">
+                  {renameFolderTarget?.name}
+                </span>
+                .
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-3">
+              <input
+                type="text"
+                value={renameFolderValue}
+                onChange={(e) => setRenameFolderValue(e.target.value)}
+                autoFocus
+                className="w-full h-9 px-3 rounded-xl bg-black/30 border border-white/[0.12] text-sm text-zinc-100 focus:outline-none focus:border-primary/60"
+              />
+              {renameFolderError && (
+                <p className="text-xs text-rose-300">{renameFolderError}</p>
+              )}
+            </div>
+            <DialogFooter>
+              <button
+                type="button"
+                onClick={() => setRenameFolderTarget(null)}
+                className="h-8 px-3 rounded-xl liquid-glass-btn text-xs text-zinc-300 hover:text-white cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={isRenamingFolder || !renameFolderValue.trim()}
+                className="h-8 px-3.5 rounded-xl liquid-glass-accent text-xs font-semibold text-primary cursor-pointer disabled:opacity-50"
+              >
+                {isRenamingFolder ? "Renaming…" : "Rename"}
+              </button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete Folder Confirmation Dialog */}
+      <Dialog
+        open={deleteFolderTarget !== null}
+        onOpenChange={(open) => {
+          if (!open) setDeleteFolderTarget(null);
+        }}
+      >
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Delete Folder</DialogTitle>
+            <DialogDescription>
+              Delete folder{" "}
+              <span className="text-zinc-200 font-medium">
+                &ldquo;{deleteFolderTarget?.name}&rdquo;
+              </span>{" "}
+              and all pieces inside it from disk? This cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+          {deleteFolderError && (
+            <p className="text-xs text-rose-300">{deleteFolderError}</p>
+          )}
+          <DialogFooter>
+            <button
+              type="button"
+              onClick={() => setDeleteFolderTarget(null)}
+              disabled={isDeletingFolder}
+              className="h-8 px-3 rounded-xl liquid-glass-btn text-xs text-zinc-300 hover:text-white cursor-pointer"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={handleConfirmDeleteFolder}
+              disabled={isDeletingFolder}
+              className="h-8 px-3.5 rounded-xl bg-rose-500/20 border border-rose-500/40 text-xs font-semibold text-rose-200 hover:bg-rose-500/30 cursor-pointer disabled:opacity-50"
+            >
+              {isDeletingFolder ? "Deleting…" : "Delete"}
+            </button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };

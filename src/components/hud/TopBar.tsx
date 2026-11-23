@@ -3,7 +3,11 @@ import { ArrowLeft } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { AppActionButtons } from "@/components/hud/AppActionButtons";
+import { FreeplayToolbar } from "@/components/hud/FreeplayToolbar";
+import { PieceActionsMenu } from "@/components/hud/PieceActionsMenu";
+import { useLibraryStore } from "@/stores/useLibraryStore";
 import { usePlaybackStore } from "@/stores/usePlaybackStore";
+import { useRecordingStore } from "@/stores/useRecordingStore";
 import { useShortcutStore } from "@/stores/useShortcutStore";
 import { useViewStore } from "@/stores/useViewStore";
 import { playbackClock } from "@/engine/playbackClock";
@@ -17,10 +21,17 @@ export const TopBar: React.FC = () => {
 
   const viewMode = useViewStore((s) => s.viewMode);
   const setViewMode = useViewStore((s) => s.setViewMode);
+  const activeSong = useLibraryStore((s) => s.activeSong);
 
   const libraryShortcut = useShortcutStore((s) => s.getFormattedBinding("view.library"));
 
   const handleReturnToLibrary = async () => {
+    if (useRecordingStore.getState().status === "recording") {
+      const take = useRecordingStore.getState().stopRecording(false);
+      if (take) {
+        return;
+      }
+    }
     if (isPlaying) {
       setIsPlaying(false);
       playbackClock.syncFromRust(displayTimeSec, false, tempoScale);
@@ -63,7 +74,23 @@ export const TopBar: React.FC = () => {
             Free Play
           </Badge>
         )}
+
+        {viewMode === "song" && activeSong && (
+          <PieceActionsMenu
+            filePath={activeSong.filePath}
+            title={activeSong.title}
+            isActiveSong
+            triggerClassName="h-7 w-7 rounded-lg liquid-glass-btn text-zinc-300 hover:text-white flex items-center justify-center transition-all cursor-pointer shadow-sm active:scale-95"
+          />
+        )}
       </div>
+
+      {/* Center section: Free Play Studio Toolbar */}
+      {viewMode === "freeplay" && (
+        <div className="absolute left-1/2 -translate-x-1/2 pointer-events-auto">
+          <FreeplayToolbar />
+        </div>
+      )}
 
       {/* Right section: Action Buttons */}
       <AppActionButtons mode={viewMode} />

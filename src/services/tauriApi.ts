@@ -1,5 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import type { HandRole, MidiDeviceInfo, ParsedSong, SongSettings, SongSummary, SoundProfile, SoundFontInfo } from "@/types/midi";
+import type { RecordedNoteEvent, RecordedSustainEvent } from "@/stores/useRecordingStore";
 
 const isTauri =
   typeof window !== "undefined" &&
@@ -241,4 +242,108 @@ export async function pickMidiFolder(): Promise<string | null> {
     console.warn("Folder picker error or fallback:", err);
   }
   return null;
+}
+
+// Recording & Export APIs
+export interface FreeplayRecordingPayload {
+  title: string;
+  bpm: number;
+  notes: RecordedNoteEvent[];
+  sustainEvents: RecordedSustainEvent[];
+}
+
+export interface SavedRecordingResult {
+  filePath: string;
+  folder: string;
+  filename: string;
+}
+
+export async function saveFreeplayMidi(
+  title: string,
+  payload: FreeplayRecordingPayload,
+  customPath?: string | null
+): Promise<SavedRecordingResult> {
+  return await invoke<SavedRecordingResult>("save_freeplay_midi", {
+    title,
+    payload,
+    customPath: customPath ?? null,
+  });
+}
+
+export async function exportMidiCopy(
+  sourcePath: string,
+  destPath: string
+): Promise<void> {
+  await invoke("export_midi_copy", { sourcePath, destPath });
+}
+
+export async function exportSongAudio(
+  midiPath: string,
+  outputPath: string,
+  format: "mp3" | "wav"
+): Promise<void> {
+  await invoke("export_song_audio", { midiPath, outputPath, format });
+}
+
+export async function exportFreeplayAudio(
+  payload: FreeplayRecordingPayload,
+  outputPath: string,
+  format: "mp3" | "wav"
+): Promise<void> {
+  await invoke("export_freeplay_audio", { payload, outputPath, format });
+}
+
+// Library File & Folder Management APIs
+export async function deleteLibrarySong(filePath: string): Promise<void> {
+  if (!isTauri) return;
+  await invoke("delete_library_song", { filePath });
+}
+
+export async function listLibraryFolders(): Promise<string[]> {
+  if (!isTauri) return [];
+  return await invoke<string[]>("list_library_folders");
+}
+
+export async function createLibraryFolder(
+  parentRelativePath: string,
+  folderName: string
+): Promise<string> {
+  return await invoke<string>("create_library_folder", {
+    parentRelativePath,
+    folderName,
+  });
+}
+
+export async function moveLibrarySong(
+  filePath: string,
+  targetFolderRelative: string
+): Promise<string> {
+  return await invoke<string>("move_library_song", {
+    filePath,
+    targetFolderRelative,
+  });
+}
+
+export async function renameLibrarySong(
+  filePath: string,
+  newTitle: string
+): Promise<string> {
+  return await invoke<string>("rename_library_song", {
+    filePath,
+    newTitle,
+  });
+}
+
+export async function renameLibraryFolder(
+  relativePath: string,
+  newName: string
+): Promise<string> {
+  return await invoke<string>("rename_library_folder", {
+    relativePath,
+    newName,
+  });
+}
+
+export async function deleteLibraryFolder(relativePath: string): Promise<void> {
+  await invoke("delete_library_folder", { relativePath });
 }

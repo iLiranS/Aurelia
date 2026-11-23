@@ -80,6 +80,13 @@ pub fn run() {
             commands::library::get_app_setting,
             commands::library::set_app_setting,
             commands::library::get_song_preview_notes,
+            commands::library::delete_library_song,
+            commands::library::list_library_folders,
+            commands::library::create_library_folder,
+            commands::library::move_library_song,
+            commands::library::rename_library_song,
+            commands::library::rename_library_folder,
+            commands::library::delete_library_folder,
             commands::playback::audio_load_song,
             commands::playback::audio_play,
             commands::playback::audio_pause,
@@ -102,6 +109,10 @@ pub fn run() {
             commands::midi_input::connect_midi_device,
             commands::midi_input::disconnect_midi_device,
             commands::midi_input::get_connected_midi_device,
+            commands::recording::save_freeplay_midi,
+            commands::recording::export_midi_copy,
+            commands::recording::export_song_audio,
+            commands::recording::export_freeplay_audio,
         ])
         .run(tauri::generate_context!())
         .expect("error while running aurelia application");

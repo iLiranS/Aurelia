@@ -2,6 +2,7 @@ import { useEffect } from "react";
 import { eventToBinding, type ShortcutActionId } from "@/types/shortcuts";
 import { useShortcutStore } from "@/stores/useShortcutStore";
 import { usePlaybackStore } from "@/stores/usePlaybackStore";
+import { useRecordingStore } from "@/stores/useRecordingStore";
 import { useLibraryStore } from "@/stores/useLibraryStore";
 import { useThemeStore } from "@/stores/useThemeStore";
 import { useMidiStore } from "@/stores/useMidiStore";
@@ -329,6 +330,10 @@ export function useGlobalShortcuts(): void {
         }
 
         case "view.library": {
+          if (useRecordingStore.getState().status === "recording") {
+            const take = useRecordingStore.getState().stopRecording(false);
+            if (take) break;
+          }
           const view = useViewStore.getState();
           await audioStopPreview().catch(() => {});
           if (view.viewMode !== "home") {
@@ -354,6 +359,10 @@ export function useGlobalShortcuts(): void {
           if (view.viewMode !== "freeplay") {
             view.setViewMode("freeplay");
           } else {
+            if (useRecordingStore.getState().status === "recording") {
+              const take = useRecordingStore.getState().stopRecording(false);
+              if (take) break;
+            }
             view.setViewMode("home");
           }
           break;

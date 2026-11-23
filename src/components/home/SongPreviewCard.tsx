@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { Star, Music2 } from "lucide-react";
 import type { SongSummary } from "@/types/midi";
+import { PieceActionsMenu } from "@/components/hud/PieceActionsMenu";
 import { useThemeStore } from "@/stores/useThemeStore";
 import { audioStartPreview, audioStopPreview } from "@/services/tauriApi";
 import { getCachedPreviewNotes } from "@/engine/previewCache";
@@ -86,6 +87,7 @@ export const SongPreviewCard: React.FC<SongPreviewCardProps> = ({
   const isDraggingProgressRef = useRef(false);
   const lastAudioSeekMsRef = useRef(0);
   const [isHovered, setIsHovered] = useState(false);
+  const [contextPos, setContextPos] = useState<{ x: number; y: number } | null>(null);
 
   const rightHandColor = useThemeStore((s) => s.rightHandColor);
   const leftHandColor = useThemeStore((s) => s.leftHandColor);
@@ -442,6 +444,11 @@ export const SongPreviewCard: React.FC<SongPreviewCardProps> = ({
         isDraggingProgressRef.current = false;
         setIsHovered(false);
       }}
+      onContextMenu={(e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        setContextPos({ x: e.clientX, y: e.clientY });
+      }}
       className="group relative flex flex-col gap-2.5 p-2 rounded-2xl liquid-glass-btn cursor-pointer select-none transition-all duration-200 hover:-translate-y-0.5"
       style={{
         boxShadow: isHovered
@@ -456,22 +463,31 @@ export const SongPreviewCard: React.FC<SongPreviewCardProps> = ({
           className="w-full h-full block"
         />
 
-        {/* Floating Pin / Star button in top right */}
-        <button
-          onClick={(e) => onToggleFavorite(e, song.contentHash)}
-          className={`absolute top-2 right-2 w-7 h-7 rounded-full flex items-center justify-center transition-all cursor-pointer backdrop-blur-md ${
-            song.isFavorite
-              ? "bg-amber-500/20 text-amber-400 border border-amber-400/40 opacity-100"
-              : "bg-black/50 text-zinc-400 border border-white/[0.10] opacity-0 group-hover:opacity-100 hover:text-amber-400 hover:bg-black/80"
-          }`}
-          aria-label={song.isFavorite ? "Unpin song" : "Pin song"}
-        >
-          <Star
-            className={`w-3.5 h-3.5 ${
-              song.isFavorite ? "fill-amber-400" : ""
-            }`}
+        {/* Floating Actions & Pin / Star buttons in top right */}
+        <div className="absolute top-2 right-2 flex items-center gap-1.5 z-10">
+          <PieceActionsMenu
+            filePath={song.filePath}
+            title={song.title}
+            contextPos={contextPos}
+            onContextPosClear={() => setContextPos(null)}
+            triggerClassName="w-7 h-7 rounded-full flex items-center justify-center transition-all cursor-pointer backdrop-blur-md bg-black/50 text-zinc-300 border border-white/[0.10] opacity-0 group-hover:opacity-100 hover:text-white hover:bg-black/80"
           />
-        </button>
+          <button
+            onClick={(e) => onToggleFavorite(e, song.contentHash)}
+            className={`w-7 h-7 rounded-full flex items-center justify-center transition-all cursor-pointer backdrop-blur-md ${
+              song.isFavorite
+                ? "bg-amber-500/20 text-amber-400 border border-amber-400/40 opacity-100"
+                : "bg-black/50 text-zinc-400 border border-white/[0.10] opacity-0 group-hover:opacity-100 hover:text-amber-400 hover:bg-black/80"
+            }`}
+            aria-label={song.isFavorite ? "Unpin song" : "Pin song"}
+          >
+            <Star
+              className={`w-3.5 h-3.5 ${
+                song.isFavorite ? "fill-amber-400" : ""
+              }`}
+            />
+          </button>
+        </div>
 
         {/* Mini music icon badge in top left (hover-only for clean resting cards) */}
         <div className="absolute top-2 left-2 px-2 py-0.5 rounded-full bg-black/50 backdrop-blur-md border border-white/[0.10] flex items-center gap-1 opacity-0 group-hover:opacity-95 transition-opacity">

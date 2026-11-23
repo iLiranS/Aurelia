@@ -1,12 +1,12 @@
 import React, { useEffect } from "react";
 import { create } from "zustand";
-import { Volume2, Volume1, VolumeX } from "lucide-react";
+import { Volume2, Volume1, VolumeX, Loader2, CheckCircle2 } from "lucide-react";
 
 export interface ToastItem {
   id: string;
   title: string;
   description?: string;
-  icon?: "volume-high" | "volume-low" | "volume-mute";
+  icon?: "volume-high" | "volume-low" | "volume-mute" | "spinner" | "check";
   durationMs?: number;
 }
 
@@ -37,13 +37,15 @@ export const useToastStore = create<ToastState>((set) => ({
     });
 
     const duration = toast.durationMs ?? 1500;
-    const timer = setTimeout(() => {
-      timers.delete(toast.id);
-      set((state) => ({
-        toasts: state.toasts.filter((t) => t.id !== toast.id),
-      }));
-    }, duration);
-    timers.set(toast.id, timer);
+    if (duration > 0 && Number.isFinite(duration)) {
+      const timer = setTimeout(() => {
+        timers.delete(toast.id);
+        set((state) => ({
+          toasts: state.toasts.filter((t) => t.id !== toast.id),
+        }));
+      }, duration);
+      timers.set(toast.id, timer);
+    }
   },
   dismissToast: (id) => {
     const existingTimer = timers.get(id);
@@ -80,6 +82,12 @@ const ToastIcon: React.FC<{ icon?: ToastItem["icon"] }> = ({ icon }) => {
   }
   if (icon === "volume-high") {
     return <Volume2 className="w-3.5 h-3.5 text-primary shrink-0" />;
+  }
+  if (icon === "spinner") {
+    return <Loader2 className="w-3.5 h-3.5 text-primary animate-spin shrink-0" />;
+  }
+  if (icon === "check") {
+    return <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />;
   }
   return null;
 };

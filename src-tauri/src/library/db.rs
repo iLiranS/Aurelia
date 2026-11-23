@@ -355,6 +355,14 @@ impl LibraryDb {
         Ok(removed_count)
     }
 
+    pub fn delete_song_by_path(&self, file_path: &str) -> Result<usize, String> {
+        let conn = self.conn.lock().map_err(|e| e.to_string())?;
+        let deleted = conn
+            .execute("DELETE FROM songs WHERE file_path = ?1", params![file_path])
+            .map_err(|e| e.to_string())?;
+        Ok(deleted)
+    }
+
     pub fn toggle_favorite(&self, content_hash: &str) -> Result<bool, String> {
         let conn = self.conn.lock().map_err(|e| e.to_string())?;
         let current_fav: i32 = conn

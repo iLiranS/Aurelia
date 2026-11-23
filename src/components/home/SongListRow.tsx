@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import { Star, Play, Music } from "lucide-react";
 import type { SongSummary } from "@/types/midi";
+import { PieceActionsMenu } from "@/components/hud/PieceActionsMenu";
 import { useThemeStore } from "@/stores/useThemeStore";
 import { audioStartPreview, audioStopPreview } from "@/services/tauriApi";
 import { getCachedPreviewNotes, type CompactNote } from "@/engine/previewCache";
@@ -25,6 +26,7 @@ export const SongListRow: React.FC<SongListRowProps> = ({
   onToggleFavorite,
 }) => {
   const [isPreviewing, setIsPreviewing] = useState(false);
+  const [contextPos, setContextPos] = useState<{ x: number; y: number } | null>(null);
   const hoverSessionRef = useRef<number>(0);
   const audioTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const progressBarRef = useRef<HTMLDivElement | null>(null);
@@ -200,6 +202,11 @@ export const SongListRow: React.FC<SongListRowProps> = ({
       onClick={handleClick}
       onMouseEnter={handleMouseEnter}
       onMouseLeave={handleMouseLeave}
+      onContextMenu={(e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        setContextPos({ x: e.clientX, y: e.clientY });
+      }}
       className={`group relative overflow-hidden flex items-center justify-between px-3.5 py-2.5 rounded-xl liquid-glass-btn cursor-pointer transition-all select-none ${
         isPreviewing ? "border-amber-400/30 bg-white/[0.06]" : "hover:border-white/18"
       }`}
@@ -264,6 +271,14 @@ export const SongListRow: React.FC<SongListRowProps> = ({
         <span className="text-zinc-300 text-xs w-12 text-right">
           {formatDuration(song.durationSec)}
         </span>
+
+        <PieceActionsMenu
+          filePath={song.filePath}
+          title={song.title}
+          contextPos={contextPos}
+          onContextPosClear={() => setContextPos(null)}
+          triggerClassName="w-6 h-6 rounded-md flex items-center justify-center text-zinc-400 hover:text-white hover:bg-white/[0.08] opacity-60 group-hover:opacity-100 transition-all cursor-pointer"
+        />
       </div>
 
       {/* Interactive Hover Progress Bar along bottom edge */}

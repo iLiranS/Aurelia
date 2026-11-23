@@ -1,7 +1,9 @@
 import { create } from "zustand";
 import type { MidiDeviceInfo, MidiLiveEventPayload } from "@/types/midi";
 import { activeNotes } from "@/engine/activeNotes";
+import { freeplayNotes } from "@/engine/freeplayNotes";
 import { usePlaybackStore } from "@/stores/usePlaybackStore";
+import { useViewStore } from "@/stores/useViewStore";
 import {
   connectMidiDevice,
   disconnectMidiDevice,
@@ -258,13 +260,18 @@ export const useMidiStore = create<MidiState>((set, get) => ({
         }
       }
 
-      const splitPointMidi = usePlaybackStore.getState().splitPointMidi;
+      const viewMode = useViewStore.getState().viewMode;
+      const splitPointMidi =
+        viewMode === "freeplay"
+          ? 60
+          : usePlaybackStore.getState().splitPointMidi;
       const hand: 1 | 2 = payload.midi >= splitPointMidi ? 1 : 2;
       activeNotes.setLiveNote(payload.midi, hand, payload.velocity / 127);
     } else if (payload.kind === "noteOff") {
       activeNotes.clearLiveNote(payload.midi);
     } else if (payload.kind === "sustain") {
       set({ sustainDown: payload.velocity >= 64 });
+      freeplayNotes.recordSustain(payload.velocity);
     }
   },
 

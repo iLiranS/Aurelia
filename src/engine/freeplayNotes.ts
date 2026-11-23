@@ -9,15 +9,26 @@ export interface FreeplayNote {
 
 export type FreeplayNoteListener = (note: FreeplayNote) => void;
 
+export interface SustainEvent {
+  timeSec: number;
+  value: number; // 0..127
+}
+
+export type FreeplaySustainListener = (event: SustainEvent) => void;
+
 export class FreeplayNotesBuffer {
   private active = false;
   private nextId = 1;
   private readonly notes: FreeplayNote[] = [];
   private readonly heldByMidi = new Map<number, FreeplayNote>();
   private readonly completedListeners = new Set<FreeplayNoteListener>();
+  private readonly sustainListeners = new Set<FreeplaySustainListener>();
 
   setActive(active: boolean): void {
     if (this.active === active) return;
+    if (!active) {
+      this.releaseAll();
+    }
     this.active = active;
     this.clear();
   }
@@ -31,6 +42,23 @@ export class FreeplayNotesBuffer {
     return () => {
       this.completedListeners.delete(listener);
     };
+  }
+
+  onSustain(listener: FreeplaySustainListener): () => void {
+    this.sustainListeners.add(listener);
+    return () => {
+      this.sustainListeners.delete(listener);
+    };
+  }
+
+  recordSustain(value: number, nowSec?: number): void {
+    if (!this.active || this.sustainListeners.size === 0) return;
+    const now = nowSec ?? performance.now() / 1000;
+    const clamped = Math.max(0, Math.min(127, Math.round(value)));
+    const event: SustainEvent = { timeSec: now, value: clamped };
+    for (const listener of this.sustainListeners) {
+      listener(event);
+    }
   }
 
   noteOn(midi: number, hand: 1 | 2, velocity: number, nowSec?: number): void {
