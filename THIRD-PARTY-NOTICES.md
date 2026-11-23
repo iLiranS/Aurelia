@@ -4,29 +4,14 @@ Aurelia includes and utilizes open-source software and audio sample libraries. T
 
 ---
 
-## 1. Bundled & Supported Audio SoundFonts
+## 1. Bundled Audio SoundFont
 
-### YDP Grand Piano
-- **Description:** Multi-sampled acoustic grand piano sampled from a Yamaha Disklavier Pro upright grand.
-- **Recordings:** Recorded by Dr. Mikhail Krishtal and Zenph Studios (OLPC / cSounds project).
-- **SoundFont Packaging:** Roberto (`roberto@zenvoid.org`) for the FreePats project.
-- **Source:** [FreePats Acoustic Grand Piano](https://freepats.zenvoid.org/Piano/acoustic-grand-piano.html)
-- **License:** Creative Commons Attribution 3.0 Unported (**CC BY 3.0**)
-- **License URL:** [https://creativecommons.org/licenses/by/3.0/](https://creativecommons.org/licenses/by/3.0/)
-
-### Salamander Grand Piano V3
-- **Description:** High-fidelity multi-sampled Yamaha C5 grand piano with 16 velocity layers and hammer release noise.
+### Salamander Grand Piano V3 (Lite)
+- **Description:** Multi-sampled Yamaha C5 grand piano optimized for Aurelia from the V3 release (3 velocity layers, 32 kHz looped sustains).
 - **Author:** Alexander Holm.
 - **Source:** [FreePats Acoustic Grand Piano](https://freepats.zenvoid.org/Piano/acoustic-grand-piano.html)
 - **License:** Creative Commons Attribution 3.0 Unported (**CC BY 3.0**)
 - **License URL:** [https://creativecommons.org/licenses/by/3.0/](https://creativecommons.org/licenses/by/3.0/)
-
-### Upright Piano KW
-- **Description:** Multi-sampled Kawai upright piano with intimate, warm felt and room acoustics.
-- **Author:** FreePats project.
-- **Source:** [FreePats Acoustic Grand Piano](https://freepats.zenvoid.org/Piano/acoustic-grand-piano.html)
-- **License:** Creative Commons Zero 1.0 Universal (**CC0 1.0 Public Domain Dedication**)
-- **License URL:** [https://creativecommons.org/publicdomain/zero/1.0/](https://creativecommons.org/publicdomain/zero/1.0/)
 
 ---
 

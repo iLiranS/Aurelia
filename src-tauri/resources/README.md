@@ -1,4 +1,4 @@
 # Aurelia Audio Resources
 
 This directory contains SoundFont `.sf2` files bundled with the desktop application:
-- `piano.sf2`: Bundled general piano SoundFont used by `RustySynthBackend`.
+- `soundfonts/SalamanderGrandPiano-V3-Lite.sf2`: Bundled default acoustic grand piano SoundFont (CC BY 3.0, Alexander Holm) used by `RustySynthBackend`.

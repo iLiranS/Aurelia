@@ -187,6 +187,11 @@ export async function importSoundfont(
   return await invoke<SoundFontInfo>("import_soundfont", { sourcePath });
 }
 
+export async function deleteSoundfont(path: string): Promise<string | null> {
+  if (!isTauri) return null;
+  return await invoke<string | null>("delete_soundfont", { path });
+}
+
 // Hardware MIDI Input APIs
 export async function listMidiDevices(): Promise<MidiDeviceInfo[]> {
   if (!isTauri) return [];

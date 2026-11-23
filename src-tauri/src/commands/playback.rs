@@ -9,7 +9,9 @@ use crate::audio::backend::RustySynthBackend;
 use crate::audio::dsp::SoundProfile;
 use crate::audio::engine::{AudioCommand, AudioEngineHandle, PlaybackClockPayload};
 use crate::audio::sequencer::build_seq_events;
-use crate::audio::soundfonts::{discover_soundfonts, import_soundfont_file, SoundFontInfo};
+use crate::audio::soundfonts::{
+    delete_soundfont_file, discover_soundfonts, import_soundfont_file, SoundFontInfo,
+};
 use crate::library::db::LibraryDb;
 use crate::midi::{parse_midi_file, HandRole, SongSettings};
 
@@ -292,4 +294,37 @@ pub fn import_soundfont(
     select_soundfont(app, engine, db, info.path.clone())?;
 
     Ok(info)
+}
+
+#[tauri::command]
+pub fn delete_soundfont(
+    app: AppHandle,
+    engine: State<'_, AudioEngineHandle>,
+    db: State<'_, Arc<LibraryDb>>,
+    path: String,
+) -> Result<Option<String>, String> {
+    let (bundled, user_dir) = get_soundfont_dirs(&app);
+    delete_soundfont_file(Path::new(&path), &user_dir)?;
+
+    let saved_active = db.get_setting("active_soundfont_v1").ok().flatten();
+    let target_canon = std::fs::canonicalize(&path).ok();
+    let is_active = saved_active.as_deref().is_some_and(|saved| {
+        saved == path
+            || target_canon
+                .as_ref()
+                .zip(std::fs::canonicalize(saved).ok().as_ref())
+                .is_some_and(|(a, b)| a == b)
+    });
+
+    if is_active {
+        let remaining = discover_soundfonts(&bundled, &user_dir);
+        if let Some(fallback) = remaining.first() {
+            select_soundfont(app, engine, db, fallback.path.clone())?;
+            return Ok(Some(fallback.path.clone()));
+        }
+        let _ = db.set_setting("active_soundfont_v1", "");
+        return Ok(None);
+    }
+
+    Ok(saved_active.filter(|s| !s.is_empty()))
 }

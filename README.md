@@ -16,7 +16,7 @@ A fast, native desktop MIDI piano visualizer and practice studio built with **Ta
 
 - **Node.js** (v18+)
 - **Rust** toolchain (`rustup` / `cargo`)
-- **SoundFont (`.sf2`):** Large `.sf2` files are excluded from Git. Place a SoundFont (e.g. `piano.sf2` or `YDP-GrandPiano-20160804.sf2`) in `src-tauri/resources/` or `src-tauri/resources/soundfonts/`, or import one directly from the in-app **Appearance & Studio** popover.
+- **SoundFont (`.sf2`):** Includes `src-tauri/resources/soundfonts/SalamanderGrandPiano-V3-Lite.sf2` as the bundled default piano. Additional large `.sf2` files are excluded from Git and can be imported directly from the in-app **Appearance & Studio** popover.
 
 ### Development
 

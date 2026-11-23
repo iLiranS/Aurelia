@@ -126,6 +126,34 @@ pub fn import_soundfont_file(source: &Path, user_dir: &Path) -> Result<SoundFont
     })
 }
 
+pub fn delete_soundfont_file(path: &Path, user_dir: &Path) -> Result<(), String> {
+    if !user_dir.exists() {
+        return Err("User soundfonts directory does not exist".to_string());
+    }
+    let canonical_user_dir = std::fs::canonicalize(user_dir)
+        .map_err(|e| format!("Failed to resolve user soundfonts directory: {}", e))?;
+    let canonical_target = std::fs::canonicalize(path)
+        .map_err(|e| format!("SoundFont file not found: {}", e))?;
+
+    if !canonical_target.starts_with(&canonical_user_dir) || canonical_target == canonical_user_dir {
+        return Err("Bundled or external SoundFonts cannot be deleted".to_string());
+    }
+    if !canonical_target.is_file() {
+        return Err("Target path is not a file".to_string());
+    }
+    let ext = canonical_target
+        .extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or("")
+        .to_lowercase();
+    if ext != "sf2" {
+        return Err("Only .sf2 SoundFont files can be deleted".to_string());
+    }
+
+    std::fs::remove_file(&canonical_target)
+        .map_err(|e| format!("Failed to delete SoundFont file: {}", e))
+}
+
 pub fn discover_soundfonts(bundled_dirs: &[PathBuf], user_dir: &Path) -> Vec<SoundFontInfo> {
     use std::collections::HashSet;
 
@@ -292,6 +320,15 @@ mod tests {
         let discovered = discover_soundfonts(&[], &user_soundfonts);
         assert_eq!(discovered.len(), 1);
         assert_eq!(discovered[0].name, "Valid Piano");
+
+        // Deleting outside user_soundfonts must fail
+        assert!(delete_soundfont_file(&valid_path, &user_soundfonts).is_err());
+        assert!(valid_path.exists());
+
+        // Deleting imported file inside user_soundfonts succeeds
+        delete_soundfont_file(Path::new(&imported.path), &user_soundfonts).unwrap();
+        assert!(!PathBuf::from(&imported.path).exists());
+        assert!(discover_soundfonts(&[], &user_soundfonts).is_empty());
 
         let _ = std::fs::remove_dir_all(&temp_dir);
     }

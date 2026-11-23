@@ -4,6 +4,7 @@ import {
   listSoundfonts,
   selectSoundfont as apiSelectSoundfont,
   importSoundfont as apiImportSoundfont,
+  deleteSoundfont as apiDeleteSoundfont,
   audioSetSoundProfile,
   setAppSetting,
 } from "@/services/tauriApi";
@@ -18,6 +19,7 @@ interface SoundState {
   fetchSoundfonts: () => Promise<void>;
   selectSoundFont: (path: string) => Promise<void>;
   importSoundFont: () => Promise<SoundFontInfo | null>;
+  deleteSoundFont: (path: string) => Promise<void>;
   setReverbMix: (mix: number) => void;
   setTouch: (touch: TouchPreset) => void;
   hydrateSoundProfile: (rawJson: string) => void;
@@ -90,6 +92,32 @@ export const useSoundStore = create<SoundState>((set, get) => ({
       set({ isSwitchingSoundFont: false });
     }
     return null;
+  },
+
+  deleteSoundFont: async (path: string) => {
+    const wasActive = get().activeSoundFontPath === path;
+    if (wasActive) {
+      set({ isSwitchingSoundFont: true });
+    }
+    try {
+      const nextActive = await apiDeleteSoundfont(path);
+      await get().fetchSoundfonts();
+      if (wasActive) {
+        set({
+          activeSoundFontPath: nextActive ?? get().soundfonts[0]?.path ?? null,
+          ...(nextActive ? {} : { isSwitchingSoundFont: false }),
+        });
+      }
+    } catch (err) {
+      if (wasActive) {
+        set({ isSwitchingSoundFont: false });
+      }
+      throw err;
+    } finally {
+      if (!wasActive) {
+        set({ isSwitchingSoundFont: false });
+      }
+    }
   },
 
   setReverbMix: (reverbMix: number) => {

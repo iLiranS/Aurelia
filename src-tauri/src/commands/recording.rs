@@ -143,14 +143,14 @@ fn resolve_soundfont_path(app: &AppHandle, db: &LibraryDb) -> Option<PathBuf> {
             res_dir
                 .join("resources")
                 .join("soundfonts")
-                .join("YDP-GrandPiano-20160804.sf2"),
+                .join("SalamanderGrandPiano-V3-Lite.sf2"),
         );
         candidates.push(res_dir.join("resources").join("piano.sf2"));
         candidates.push(res_dir.join("piano.sf2"));
     }
-    candidates.push(PathBuf::from("resources/soundfonts/YDP-GrandPiano-20160804.sf2"));
+    candidates.push(PathBuf::from("resources/soundfonts/SalamanderGrandPiano-V3-Lite.sf2"));
     candidates.push(PathBuf::from(
-        "src-tauri/resources/soundfonts/YDP-GrandPiano-20160804.sf2",
+        "src-tauri/resources/soundfonts/SalamanderGrandPiano-V3-Lite.sf2",
     ));
     candidates.push(PathBuf::from("resources/piano.sf2"));
     candidates.push(PathBuf::from("src-tauri/resources/piano.sf2"));

@@ -48,12 +48,12 @@ pub fn run() {
 
             // 2. Bundled and dev candidates
             if let Ok(res_dir) = app.path().resource_dir() {
-                sf_candidates.push(res_dir.join("resources").join("soundfonts").join("YDP-GrandPiano-20160804.sf2"));
+                sf_candidates.push(res_dir.join("resources").join("soundfonts").join("SalamanderGrandPiano-V3-Lite.sf2"));
                 sf_candidates.push(res_dir.join("resources").join("piano.sf2"));
                 sf_candidates.push(res_dir.join("piano.sf2"));
             }
-            sf_candidates.push(PathBuf::from("resources/soundfonts/YDP-GrandPiano-20160804.sf2"));
-            sf_candidates.push(PathBuf::from("src-tauri/resources/soundfonts/YDP-GrandPiano-20160804.sf2"));
+            sf_candidates.push(PathBuf::from("resources/soundfonts/SalamanderGrandPiano-V3-Lite.sf2"));
+            sf_candidates.push(PathBuf::from("src-tauri/resources/soundfonts/SalamanderGrandPiano-V3-Lite.sf2"));
             sf_candidates.push(PathBuf::from("resources/piano.sf2"));
             sf_candidates.push(PathBuf::from("src-tauri/resources/piano.sf2"));
 
@@ -105,6 +105,7 @@ pub fn run() {
             commands::playback::list_soundfonts,
             commands::playback::select_soundfont,
             commands::playback::import_soundfont,
+            commands::playback::delete_soundfont,
             commands::midi_input::list_midi_devices,
             commands::midi_input::connect_midi_device,
             commands::midi_input::disconnect_midi_device,
