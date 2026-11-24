@@ -23,6 +23,7 @@ export interface AppearanceSettingsJson {
   keyboardVignette?: boolean;
   stageGlowEnabled?: boolean;
   showOctaveGuides?: boolean;
+  showMeasureLines?: boolean;
 }
 
 interface ThemeState {
@@ -43,6 +44,7 @@ interface ThemeState {
   keyboardVignette: boolean;
   stageGlowEnabled: boolean;
   showOctaveGuides: boolean;
+  showMeasureLines: boolean;
 
   setPreset: (presetId: string) => void;
   setRightHandColor: (color: string) => void;
@@ -61,6 +63,7 @@ interface ThemeState {
   setKeyboardVignette: (enabled: boolean) => void;
   setStageGlowEnabled: (enabled: boolean) => void;
   setShowOctaveGuides: (show: boolean) => void;
+  setShowMeasureLines: (show: boolean) => void;
   hydrateAppearance: (jsonStr: string) => void;
 }
 
@@ -85,6 +88,7 @@ function persistAppearanceDebounced(state: ThemeState) {
         keyboardVignette: state.keyboardVignette,
         stageGlowEnabled: state.stageGlowEnabled,
         showOctaveGuides: state.showOctaveGuides,
+        showMeasureLines: state.showMeasureLines,
       };
       await setAppSetting("appearance_v1", JSON.stringify(data));
     } catch (err) {
@@ -111,6 +115,7 @@ export const useThemeStore = create<ThemeState>((set, get) => ({
   keyboardVignette: true,
   stageGlowEnabled: true,
   showOctaveGuides: true,
+  showMeasureLines: true,
 
   setPreset: (presetId) => {
     const found = THEME_PRESETS.find((p) => p.id === presetId);
@@ -209,6 +214,11 @@ export const useThemeStore = create<ThemeState>((set, get) => ({
     persistAppearanceDebounced(get());
   },
 
+  setShowMeasureLines: (showMeasureLines) => {
+    set({ showMeasureLines });
+    persistAppearanceDebounced(get());
+  },
+
   hydrateAppearance: (jsonStr: string) => {
     try {
       const parsed = JSON.parse(jsonStr) as Partial<AppearanceSettingsJson>;
@@ -254,6 +264,7 @@ export const useThemeStore = create<ThemeState>((set, get) => ({
           keyboardVignette: parsed.keyboardVignette ?? state.keyboardVignette,
           stageGlowEnabled: parsed.stageGlowEnabled ?? state.stageGlowEnabled,
           showOctaveGuides: parsed.showOctaveGuides ?? state.showOctaveGuides,
+          showMeasureLines: parsed.showMeasureLines ?? state.showMeasureLines,
         };
       });
     } catch (err) {

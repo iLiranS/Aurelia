@@ -24,6 +24,12 @@ export interface PedalEvent {
   value: number;        // 0 .. 127 (>= 64 = down)
 }
 
+export interface TimeSignatureEvent {
+  timeSec: number;
+  numerator: number;
+  denominator: number;
+}
+
 export interface ParsedSong {
   contentHash: string;
   filePath: string;
@@ -33,6 +39,8 @@ export interface ParsedSong {
   tracks: MidiTrackInfo[];
   notes: MidiNote[];
   pedalEvents: PedalEvent[];
+  timeSignatures: TimeSignatureEvent[];
+  measureTimesSec: number[];
 }
 
 export interface SongSummary {

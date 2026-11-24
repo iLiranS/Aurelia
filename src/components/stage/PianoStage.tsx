@@ -3,6 +3,7 @@ import * as THREE from "three";
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import { OrthographicCamera } from "@react-three/drei";
 import { FallingNotes } from "./FallingNotes";
+import { MeasureLines } from "./MeasureLines";
 import { ListPreviewDriver } from "./ListPreviewDriver";
 import { PianoKeyboard } from "./PianoKeyboard";
 import { HitEffects } from "./HitEffects";
@@ -545,8 +546,9 @@ export const PianoStage: React.FC = () => {
         />
         <StageCameraLock />
 
-        {/* Subtle Octave Dividers in Waterfall Zone */}
+        {/* Subtle Octave Dividers & Measure Lines in Waterfall Zone */}
         <OctaveDividers />
+        <MeasureLines />
 
         {/* Piece-Mode Stage Atmosphere (Keybed Glow & Top-Edge Fade) */}
         <StageAtmosphere />

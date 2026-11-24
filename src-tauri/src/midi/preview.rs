@@ -136,6 +136,8 @@ mod tests {
             tracks: Vec::new(),
             notes: Vec::new(),
             pedal_events: Vec::new(),
+            time_signatures: Vec::new(),
+            measure_times_sec: Vec::new(),
         };
 
         let previews = compute_song_previews(&parsed);
@@ -160,6 +162,8 @@ mod tests {
             tracks: Vec::new(),
             notes,
             pedal_events: Vec::new(),
+            time_signatures: Vec::new(),
+            measure_times_sec: Vec::new(),
         };
 
         let previews = compute_song_previews(&parsed);
@@ -207,6 +211,8 @@ mod tests {
             tracks: Vec::new(),
             notes,
             pedal_events: Vec::new(),
+            time_signatures: Vec::new(),
+            measure_times_sec: Vec::new(),
         };
 
         let previews = compute_song_previews(&parsed);

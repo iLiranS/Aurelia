@@ -43,6 +43,14 @@ pub struct PedalEvent {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct TimeSignatureEvent {
+    pub time_sec: f64,
+    pub numerator: u8,
+    pub denominator: u8,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ParsedSong {
     pub content_hash: String,
     pub file_path: String,
@@ -52,6 +60,8 @@ pub struct ParsedSong {
     pub tracks: Vec<MidiTrackInfo>,
     pub notes: Vec<MidiNote>,
     pub pedal_events: Vec<PedalEvent>,
+    pub time_signatures: Vec<TimeSignatureEvent>,
+    pub measure_times_sec: Vec<f64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -258,8 +268,9 @@ pub fn parse_midi_bytes(
         return Err("Invalid ticks_per_beat in MIDI header".to_string());
     }
 
-    // Pass 1: Collect tempo events & song title
+    // Pass 1: Collect tempo events, time signatures & song title
     let mut raw_tempos: Vec<(u64, u32)> = Vec::new();
+    let mut raw_time_sigs: Vec<(u64, u8, u8)> = Vec::new();
     let mut song_title: Option<String> = None;
 
     for track in &smf.tracks {
@@ -270,6 +281,10 @@ pub fn parse_midi_bytes(
                 match meta {
                     midly::MetaMessage::Tempo(us) => {
                         raw_tempos.push((abs_tick, us.as_int()));
+                    }
+                    midly::MetaMessage::TimeSignature(num, den_pow, _, _) => {
+                        let den = 2u32.pow((den_pow as u32).min(7)).clamp(1, 128) as u8;
+                        raw_time_sigs.push((abs_tick, num.max(1), den));
                     }
                     midly::MetaMessage::TrackName(b) => {
                         if song_title.is_none() {
@@ -307,6 +322,7 @@ pub fn parse_midi_bytes(
     let mut raw_notes: Vec<RawNote> = Vec::new();
     let mut pedal_events: Vec<PedalEvent> = Vec::new();
     let mut track_infos: Vec<MidiTrackInfo> = Vec::new();
+    let mut max_song_tick: u64 = 0;
 
     for (track_idx, track) in smf.tracks.iter().enumerate() {
         let mut track_name = format!("Track {}", track_idx + 1);
@@ -342,6 +358,7 @@ pub fn parse_midi_bytes(
                                     if let Some((start_tick, start_vel)) = starts.pop() {
                                         let start_sec = tempo_map.tick_to_sec(start_tick);
                                         let end_sec = tempo_map.tick_to_sec(abs_tick);
+                                        max_song_tick = max_song_tick.max(abs_tick);
                                         let duration_sec = (end_sec - start_sec).max(0.04);
                                         raw_notes.push(RawNote {
                                             midi: k,
@@ -363,6 +380,7 @@ pub fn parse_midi_bytes(
                                 if let Some((start_tick, start_vel)) = starts.pop() {
                                     let start_sec = tempo_map.tick_to_sec(start_tick);
                                     let end_sec = tempo_map.tick_to_sec(abs_tick);
+                                    max_song_tick = max_song_tick.max(abs_tick);
                                     let duration_sec = (end_sec - start_sec).max(0.04);
                                     raw_notes.push(RawNote {
                                         midi: k,
@@ -379,6 +397,7 @@ pub fn parse_midi_bytes(
                         }
                         midly::MidiMessage::Controller { controller, value } => {
                             if controller.as_int() == 64 {
+                                max_song_tick = max_song_tick.max(abs_tick);
                                 pedal_events.push(PedalEvent {
                                     time_sec: tempo_map.tick_to_sec(abs_tick),
                                     value: value.as_int(),
@@ -397,6 +416,7 @@ pub fn parse_midi_bytes(
             for (start_tick, start_vel) in starts {
                 let start_sec = tempo_map.tick_to_sec(start_tick);
                 let end_sec = tempo_map.tick_to_sec(abs_tick);
+                max_song_tick = max_song_tick.max(abs_tick);
                 let duration_sec = (end_sec - start_sec).max(0.04);
                 raw_notes.push(RawNote {
                     midi: k,
@@ -515,6 +535,56 @@ pub fn parse_midi_bytes(
     let duration_sec = max_end_sec.max(1.0);
     let initial_bpm = tempo_map.dominant_bpm(duration_sec);
 
+    // Build deduplicated time signatures and exact measure timestamps
+    raw_time_sigs.sort_by_key(|&(tick, _, _)| tick);
+    let mut deduped_ts: Vec<(u64, u8, u8)> = Vec::new();
+    for (tick, num, den) in raw_time_sigs {
+        if let Some(last) = deduped_ts.last_mut() {
+            if last.0 == tick {
+                last.1 = num;
+                last.2 = den;
+                continue;
+            }
+        }
+        deduped_ts.push((tick, num, den));
+    }
+    if deduped_ts.is_empty() || deduped_ts[0].0 != 0 {
+        deduped_ts.insert(0, (0, 4, 4));
+    }
+
+    let time_signatures: Vec<TimeSignatureEvent> = deduped_ts
+        .iter()
+        .map(|&(tick, numerator, denominator)| TimeSignatureEvent {
+            time_sec: tempo_map.tick_to_sec(tick),
+            numerator,
+            denominator,
+        })
+        .collect();
+
+    let mut measure_times_sec: Vec<f64> = Vec::new();
+    const MAX_MEASURES: usize = 20_000;
+    for i in 0..deduped_ts.len() {
+        let (seg_start_tick, num, den) = deduped_ts[i];
+        if seg_start_tick > max_song_tick {
+            break;
+        }
+        let next_seg_tick = if i + 1 < deduped_ts.len() {
+            deduped_ts[i + 1].0.min(max_song_tick + 1)
+        } else {
+            max_song_tick + 1
+        };
+        let measure_ticks =
+            (ticks_per_beat * (num.max(1) as f64) * (4.0 / (den.max(1) as f64))).max(1.0);
+        let mut cur_tick = seg_start_tick as f64;
+        while (cur_tick.round() as u64) < next_seg_tick && measure_times_sec.len() < MAX_MEASURES {
+            measure_times_sec.push(tempo_map.tick_to_sec(cur_tick.round() as u64));
+            cur_tick += measure_ticks;
+        }
+        if measure_times_sec.len() >= MAX_MEASURES {
+            break;
+        }
+    }
+
     Ok(ParsedSong {
         content_hash,
         file_path: file_path.to_string(),
@@ -524,6 +594,8 @@ pub fn parse_midi_bytes(
         tracks: track_infos,
         notes: final_notes,
         pedal_events,
+        time_signatures,
+        measure_times_sec,
     })
 }
 
@@ -652,5 +724,121 @@ mod tests {
         // Total song duration = 10.05s, dominated by 128 BPM (10s)
         let dominant = tm.dominant_bpm(10.05);
         assert_eq!(dominant, 128.0);
+    }
+
+    #[test]
+    fn test_measure_times_default_4_4() {
+        use midly::num::{u15, u28, u4, u7};
+        use midly::{Format, Header, MidiMessage, Timing, TrackEvent, TrackEventKind};
+
+        let header = Header {
+            format: Format::Parallel,
+            timing: Timing::Metrical(u15::from(480)),
+        };
+
+        // No TimeSignature event -> defaults to 4/4 at 120 BPM (2.0s per bar).
+        // Note spans 0..=3840 ticks (0.0s..=4.0s).
+        let track0 = vec![
+            TrackEvent {
+                delta: u28::from(0),
+                kind: TrackEventKind::Midi {
+                    channel: u4::from(0),
+                    message: MidiMessage::NoteOn {
+                        key: u7::from(60),
+                        vel: u7::from(100),
+                    },
+                },
+            },
+            TrackEvent {
+                delta: u28::from(3840),
+                kind: TrackEventKind::Midi {
+                    channel: u4::from(0),
+                    message: MidiMessage::NoteOff {
+                        key: u7::from(60),
+                        vel: u7::from(0),
+                    },
+                },
+            },
+        ];
+
+        let mut smf_bytes = Vec::new();
+        let smf = midly::Smf {
+            header,
+            tracks: vec![track0],
+        };
+        smf.write(&mut smf_bytes).unwrap();
+
+        let parsed = parse_midi_bytes(&smf_bytes, "/test/4_4.mid", "4_4").unwrap();
+        assert_eq!(parsed.time_signatures.len(), 1);
+        assert_eq!(parsed.time_signatures[0].numerator, 4);
+        assert_eq!(parsed.time_signatures[0].denominator, 4);
+        assert_eq!(parsed.measure_times_sec.len(), 3);
+        assert!((parsed.measure_times_sec[0] - 0.0).abs() < 1e-6);
+        assert!((parsed.measure_times_sec[1] - 2.0).abs() < 1e-6);
+        assert!((parsed.measure_times_sec[2] - 4.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn test_measure_times_3_4_and_tempo_change() {
+        use midly::num::{u15, u24, u28, u4, u7};
+        use midly::{Format, Header, MetaMessage, MidiMessage, Timing, TrackEvent, TrackEventKind};
+
+        let header = Header {
+            format: Format::Parallel,
+            timing: Timing::Metrical(u15::from(480)),
+        };
+
+        // 3/4 at 120 BPM (bar 0 = 0.0s, bar 1 = 1.5s @ tick 1440),
+        // then tempo changes to 240 BPM (250_000 us/beat) at tick 1440 -> bar 2 = 2.25s @ tick 2880.
+        let track0 = vec![
+            TrackEvent {
+                delta: u28::from(0),
+                kind: TrackEventKind::Meta(MetaMessage::TimeSignature(3, 2, 24, 8)),
+            },
+            TrackEvent {
+                delta: u28::from(0),
+                kind: TrackEventKind::Meta(MetaMessage::Tempo(u24::from(500_000))),
+            },
+            TrackEvent {
+                delta: u28::from(0),
+                kind: TrackEventKind::Midi {
+                    channel: u4::from(0),
+                    message: MidiMessage::NoteOn {
+                        key: u7::from(60),
+                        vel: u7::from(100),
+                    },
+                },
+            },
+            TrackEvent {
+                delta: u28::from(1440),
+                kind: TrackEventKind::Meta(MetaMessage::Tempo(u24::from(250_000))),
+            },
+            TrackEvent {
+                delta: u28::from(1440),
+                kind: TrackEventKind::Midi {
+                    channel: u4::from(0),
+                    message: MidiMessage::NoteOff {
+                        key: u7::from(60),
+                        vel: u7::from(0),
+                    },
+                },
+            },
+        ];
+
+        let mut smf_bytes = Vec::new();
+        let smf = midly::Smf {
+            header,
+            tracks: vec![track0],
+        };
+        smf.write(&mut smf_bytes).unwrap();
+
+        let parsed = parse_midi_bytes(&smf_bytes, "/test/3_4.mid", "3_4").unwrap();
+        assert_eq!(parsed.time_signatures.len(), 1);
+        assert_eq!(parsed.time_signatures[0].numerator, 3);
+        assert_eq!(parsed.time_signatures[0].denominator, 4);
+        assert_eq!(parsed.measure_times_sec.len(), 3);
+        assert!((parsed.measure_times_sec[0] - 0.0).abs() < 1e-6);
+        assert!((parsed.measure_times_sec[1] - 1.5).abs() < 1e-6);
+        assert!((parsed.measure_times_sec[2] - 2.25).abs() < 1e-6);
     }
 }

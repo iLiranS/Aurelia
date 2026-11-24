@@ -15,6 +15,7 @@ import {
   Contrast,
   Layers,
   Columns3,
+  Rows3,
 } from "lucide-react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
@@ -69,6 +70,8 @@ export const AppearancePopover: React.FC = () => {
   const setStageGlowEnabled = useThemeStore((s) => s.setStageGlowEnabled);
   const showOctaveGuides = useThemeStore((s) => s.showOctaveGuides);
   const setShowOctaveGuides = useThemeStore((s) => s.setShowOctaveGuides);
+  const showMeasureLines = useThemeStore((s) => s.showMeasureLines);
+  const setShowMeasureLines = useThemeStore((s) => s.setShowMeasureLines);
 
   const lookaheadSec = useThemeStore((s) => s.lookaheadSec);
   const setLookaheadSec = useThemeStore((s) => s.setLookaheadSec);
@@ -301,6 +304,17 @@ export const AppearancePopover: React.FC = () => {
                 <Switch
                   checked={showOctaveGuides}
                   onCheckedChange={setShowOctaveGuides}
+                />
+              </div>
+
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-1.5 text-xs text-zinc-200">
+                  <Rows3 className="w-3.5 h-3.5 text-zinc-400" />
+                  <span>Measure Lines</span>
+                </div>
+                <Switch
+                  checked={showMeasureLines}
+                  onCheckedChange={setShowMeasureLines}
                 />
               </div>
             </div>
