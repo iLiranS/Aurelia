@@ -3,7 +3,6 @@ import { eventToBinding, type ShortcutActionId } from "@/types/shortcuts";
 import { useShortcutStore } from "@/stores/useShortcutStore";
 import { usePlaybackStore } from "@/stores/usePlaybackStore";
 import { useRecordingStore } from "@/stores/useRecordingStore";
-import { useLibraryStore } from "@/stores/useLibraryStore";
 import { useThemeStore } from "@/stores/useThemeStore";
 import { useMidiStore } from "@/stores/useMidiStore";
 import { playbackClock } from "@/engine/playbackClock";
@@ -115,10 +114,15 @@ export function useGlobalShortcuts(): void {
     };
 
     const handleKeyDown = async (e: KeyboardEvent) => {
+      if (e.defaultPrevented) return;
+
       const shortcutStore = useShortcutStore.getState();
 
-      // Suspension Rule 1: Modal is open and actively recording a shortcut
-      if (shortcutStore.dialogOpen && shortcutStore.recordingActionId !== null) {
+      // Suspension Rule 1: A modal dialog is open (e.g. Shortcut Manager, Settings, Recording Review)
+      if (
+        shortcutStore.dialogOpen ||
+        document.querySelector('[role="dialog"][aria-modal="true"]') !== null
+      ) {
         return;
       }
 
@@ -172,11 +176,14 @@ export function useGlobalShortcuts(): void {
         return;
       }
 
+      if (matchedAction === "view.library" && viewMode === "home") {
+        return;
+      }
+
       e.preventDefault();
       e.stopPropagation();
 
       const playback = usePlaybackStore.getState();
-      const library = useLibraryStore.getState();
       const theme = useThemeStore.getState();
 
       switch (matchedAction) {
@@ -347,8 +354,6 @@ export function useGlobalShortcuts(): void {
               await audioPause().catch(() => {});
             }
             view.setViewMode("home");
-          } else if (library.activeSong) {
-            view.setViewMode("song");
           }
           break;
         }

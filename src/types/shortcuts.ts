@@ -151,9 +151,9 @@ export const SHORTCUT_DEFINITIONS: ShortcutDefinition[] = [
   {
     id: "view.library",
     category: "View",
-    label: "Toggle Library / Home",
-    description: "Open or collapse the song library",
-    defaultBinding: "Mod+B",
+    label: "Back to Library",
+    description: "Return to the song library from a piece or free-play",
+    defaultBinding: "Escape",
   },
   {
     id: "view.freeplay",

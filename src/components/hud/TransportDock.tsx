@@ -121,10 +121,10 @@ export const TransportDock: React.FC = () => {
     <>
     <nav
       aria-label="Playback Controls"
-      className="fixed top-2.5 left-1/2 -translate-x-1/2 z-30 select-none pointer-events-auto"
+      className="fixed top-0 h-10 left-1/2 -translate-x-1/2 z-30 flex items-center select-none pointer-events-auto"
     >
       {/* Floating Liquid Glass Dock (Stable width, subtle hairline border, specular top rim) */}
-      <div className="flex items-center gap-2 sm:gap-2.5 px-3 py-1.5 liquid-glass-dock rounded-full shadow-2xl">
+      <div className="flex items-center gap-2 sm:gap-2.5 px-3 py-1 liquid-glass-dock rounded-full shadow-2xl">
         {/* Restart & Play / Pause */}
         <div className="flex items-center gap-1 shrink-0">
           <Tooltip>

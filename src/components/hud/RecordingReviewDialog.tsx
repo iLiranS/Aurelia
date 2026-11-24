@@ -12,6 +12,7 @@ import { useToastStore } from "@/components/ui/toast";
 import { playbackClock } from "@/engine/playbackClock";
 import {
   audioLoadSong,
+  audioPlay,
   exportFreeplayAudio,
   exportSongAudio,
   loadSong,
@@ -200,6 +201,9 @@ export const RecordingReviewDialog: React.FC = () => {
 
       clearReview();
       useViewStore.getState().setViewMode("song");
+      pb.setIsPlaying(true);
+      playbackClock.syncFromRust(0, true, settings.tempoScale);
+      await audioPlay();
     } catch (err) {
       setErrorMsg(err instanceof Error ? err.message : String(err));
     } finally {

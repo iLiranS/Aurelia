@@ -117,6 +117,7 @@ export function DialogContent({
   React.useEffect(() => {
     if (!open) return;
     const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.defaultPrevented) return;
       if (e.key === "Escape") {
         setOpen(false);
       }

@@ -55,11 +55,7 @@ export const ShortcutManagerDialog: React.FC = () => {
     const handleKeyDown = (e: KeyboardEvent) => {
       e.preventDefault();
       e.stopPropagation();
-
-      if (e.key === "Escape") {
-        stopRecording();
-        return;
-      }
+      e.stopImmediatePropagation();
 
       if (e.key === "Backspace" || e.key === "Delete") {
         setBinding(recordingActionId, null);
@@ -207,7 +203,7 @@ export const ShortcutManagerDialog: React.FC = () => {
                                   <button
                                     onClick={stopRecording}
                                     className="w-6 h-6 rounded-lg liquid-glass-btn text-zinc-400 hover:text-zinc-100 flex items-center justify-center transition-all cursor-pointer"
-                                    title="Cancel recording (Esc)"
+                                    title="Cancel recording"
                                   >
                                     <X className="w-3 h-3" />
                                   </button>

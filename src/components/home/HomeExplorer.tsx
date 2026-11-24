@@ -45,6 +45,7 @@ import {
   loadSong,
   toggleFavorite as apiToggleFavorite,
   audioLoadSong,
+  audioPlay,
   createLibraryFolder,
   renameLibraryFolder,
   deleteLibraryFolder,
@@ -126,6 +127,7 @@ export const HomeExplorer: React.FC = () => {
   const setUseSplitPoint = usePlaybackStore((s) => s.setUseSplitPoint);
   const setTrackHands = usePlaybackStore((s) => s.setTrackHands);
   const setDisplayTimeSec = usePlaybackStore((s) => s.setDisplayTimeSec);
+  const setIsPlaying = usePlaybackStore((s) => s.setIsPlaying);
 
   // View state
   const currentFolderPath = useViewStore((s) => s.currentFolderPath);
@@ -162,6 +164,9 @@ export const HomeExplorer: React.FC = () => {
       playbackClock.seekLocal(0);
 
       setViewMode("song");
+      setIsPlaying(true);
+      playbackClock.syncFromRust(0, true, settings.tempoScale);
+      await audioPlay();
     } catch (err) {
       console.error("Failed to load MIDI file:", err);
     } finally {
@@ -540,8 +545,8 @@ export const HomeExplorer: React.FC = () => {
       </div>
 
       {/* Main Scrollable Library Explorer */}
-      <ScrollArea className="flex-1 px-6 md:px-8 py-6 pt-2">
-        <div className="max-w-[1600px] mx-auto pb-12 space-y-8">
+      <ScrollArea className="flex-1 px-6 md:px-8 py-0 ">
+        <div className="max-w-[1600px] mx-auto pb-12 space-y-2">
           {/* Empty State: No MIDI Folder */}
           {!rootFolder || songs.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-20 text-center space-y-4">
@@ -608,7 +613,7 @@ export const HomeExplorer: React.FC = () => {
             <>
               {/* 1. NESTED FOLDERS TILES */}
               {immediateFolders.length > 0 && (
-                <section className="space-y-4">
+                <section className="space-y-2.5">
                   <div className="flex items-center gap-3">
                     <span className="text-[11px] font-semibold tracking-[0.14em] text-zinc-500 uppercase">
                       FOLDERS
@@ -621,14 +626,14 @@ export const HomeExplorer: React.FC = () => {
                         setNewFolderError(null);
                         setNewFolderOpen(true);
                       }}
-                      className="h-7 px-2.5 rounded-full liquid-glass-btn flex items-center gap-1.5 text-xs text-zinc-300 hover:text-white transition-all cursor-pointer active:scale-95"
+                      className="h-6 px-2.5 rounded-full liquid-glass-btn flex items-center gap-1.5 text-[11px] text-zinc-300 hover:text-white transition-all cursor-pointer active:scale-95"
                     >
-                      <FolderPlus className="w-3.5 h-3.5 text-primary" />
+                      <FolderPlus className="w-3 h-3 text-primary" />
                       <span>New Folder</span>
                     </button>
                   </div>
 
-                  <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-3">
+                  <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-2">
                     {immediateFolders.map((f) => (
                       <button
                         key={f.name}
@@ -646,17 +651,16 @@ export const HomeExplorer: React.FC = () => {
                             y: e.clientY,
                           });
                         }}
-                        className="group flex items-center justify-between p-3 rounded-xl liquid-glass-btn cursor-pointer transition-all hover:border-white/20 active:scale-[0.98] text-left"
-                      >
-                        <div className="flex items-center gap-2.5 min-w-0">
-                          <div className="w-8 h-8 rounded-lg bg-black/40 border border-white/[0.08] flex items-center justify-center text-primary shrink-0 group-hover:scale-105 transition-transform">
-                            <Folder className="w-4 h-4 fill-primary/20" />
+                        className="group flex items-center justify-between px-2.5 pt-1.5 pb-1 rounded-lg liquid-glass-btn cursor-pointer transition-all hover:border-white/20 active:scale-[0.98] text-left">
+                        <div className="flex items-center gap-2 min-w-0">
+                          <div className="w-6 h-6 rounded-md bg-black/40 border border-white/[0.08] flex items-center justify-center text-primary shrink-0 group-hover:scale-105 transition-transform">
+                            <Folder className="w-3.5 h-3.5 fill-primary/20" />
                           </div>
                           <div className="min-w-0">
-                            <h4 className="text-xs font-medium text-zinc-200 truncate group-hover:text-zinc-100">
+                            <h4 className="text-xs font-medium text-zinc-200 truncate leading-tight group-hover:text-zinc-100">
                               {f.name}
                             </h4>
-                            <span className="text-[10px] font-mono tabular-nums text-zinc-500">
+                            <span className="block text-[10px] font-mono tabular-nums text-zinc-500 leading-tight">
                               {f.count} {f.count === 1 ? "piece" : "pieces"}
                             </span>
                           </div>
