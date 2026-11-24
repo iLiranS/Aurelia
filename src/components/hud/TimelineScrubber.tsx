@@ -185,7 +185,7 @@ export const TimelineScrubber: React.FC = () => {
       onPointerMove={handleBarPointerMove}
       onPointerUp={finishBarDrag}
       onPointerCancel={finishBarDrag}
-      className="relative group flex items-center h-6 w-32 sm:w-44 md:w-56 cursor-pointer select-none py-2 touch-none"
+      className="relative group flex items-center h-6 w-44 sm:w-64 md:w-80 lg:w-96 cursor-pointer select-none py-2 touch-none"
     >
       {/* Background Track Bar */}
       <div className="relative w-full h-1.5 rounded-full bg-white/[0.12] overflow-hidden">

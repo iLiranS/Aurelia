@@ -62,11 +62,13 @@ void main() {
   // Top fallboard ambient occlusion
   col *= mix(0.72, 1.0, smoothstep(1.0, 0.82, vUv.y));
 
-  // Bottom 3D front lip that compresses on key press
-  float lipH = mix(0.09, 0.03, vDepression);
-  float lipMask = 1.0 - smoothstep(lipH - 0.006, lipH + 0.006, vUv.y);
-  float ridge = exp(-pow((vUv.y - lipH) * keyPx.y * 0.7, 2.0)) * 0.045 * (1.0 - vDimmed);
-  col *= mix(1.0, 0.68, lipMask);
+  // Subtle, natural 3D ivory front bevel that compresses on key press
+  float lipH = mix(0.052, 0.018, vDepression);
+  float lipMask = 1.0 - smoothstep(lipH - 0.018, lipH + 0.012, vUv.y);
+  float lipGrad = smoothstep(0.0, max(lipH, 0.001), vUv.y);
+  float lipShade = mix(0.68, 0.89, lipGrad);
+  float ridge = exp(-pow((vUv.y - lipH) * keyPx.y * 0.45, 2.0)) * 0.028 * (1.0 - vDimmed);
+  col *= mix(1.0, lipShade, lipMask);
   col += ridge;
 
   // Inner side-shadow depth cue when depressed

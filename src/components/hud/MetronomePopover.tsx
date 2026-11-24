@@ -103,10 +103,10 @@ export const MetronomePopover: React.FC<MetronomePopoverProps> = ({
           <button
             type="button"
             onClick={() => metronomeEngine.toggle()}
-            className={`h-6 pl-2 pr-1.5 rounded-l-lg text-[11px] font-medium flex items-center gap-1.5 transition-all cursor-pointer ${
+            className={`h-6 pl-2.5 pr-1.5 rounded-l-full text-[11px] font-medium flex items-center gap-1.5 transition-all cursor-pointer ${
               running
                 ? "liquid-glass-accent text-primary font-semibold"
-                : "text-zinc-300 hover:text-white hover:bg-white/[0.06]"
+                : "text-zinc-300 hover:text-white hover:bg-white/[0.08]"
             }`}
             aria-label={running ? "Stop Metronome" : "Start Metronome"}
           >
@@ -136,10 +136,10 @@ export const MetronomePopover: React.FC<MetronomePopoverProps> = ({
             <PopoverTrigger asChild>
               <button
                 type="button"
-                className={`h-6 px-1 rounded-r-lg border-l border-white/[0.08] flex items-center justify-center transition-all cursor-pointer ${
+                className={`h-6 pl-1 pr-1.5 rounded-r-full border-l border-white/[0.08] flex items-center justify-center transition-all cursor-pointer ${
                   running
                     ? "liquid-glass-accent text-primary"
-                    : "text-zinc-400 hover:text-zinc-200 hover:bg-white/[0.06]"
+                    : "text-zinc-400 hover:text-zinc-100 hover:bg-white/[0.08]"
                 }`}
                 aria-label="Metronome Settings"
               >

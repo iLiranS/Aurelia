@@ -11,6 +11,7 @@ import { useRecordingStore } from "@/stores/useRecordingStore";
 import { useShortcutStore } from "@/stores/useShortcutStore";
 import { useViewStore } from "@/stores/useViewStore";
 import { playbackClock } from "@/engine/playbackClock";
+import { metronomeEngine } from "@/engine/metronome";
 import { audioPause, audioStopPreview } from "@/services/tauriApi";
 
 export const TopBar: React.FC = () => {
@@ -32,12 +33,13 @@ export const TopBar: React.FC = () => {
         return;
       }
     }
+    metronomeEngine.stop();
     if (isPlaying) {
       setIsPlaying(false);
       playbackClock.syncFromRust(displayTimeSec, false, tempoScale);
-      await audioPause().catch(() => { });
+      await audioPause().catch(() => {});
     }
-    await audioStopPreview().catch(() => { });
+    await audioStopPreview().catch(() => {});
     setViewMode("home");
   };
 
@@ -47,14 +49,14 @@ export const TopBar: React.FC = () => {
   }
 
   return (
-    <header className="fixed top-0 left-0 right-0 h-10 z-20 flex items-center justify-between px-4 pointer-events-none select-none">
-      {/* Left section: Return to Library / Free Play Indicator */}
-      <div className="flex items-center gap-2 pointer-events-auto">
+    <header className="fixed top-2.5 left-0 right-0 h-10 z-20 flex items-center justify-between px-4 pointer-events-none select-none">
+      {/* Left section: Return to Library + Active Piece Title / Free Play Indicator */}
+      <div className="flex items-center gap-2 pointer-events-auto min-w-0">
         <Tooltip>
           <TooltipTrigger asChild>
             <button
               onClick={handleReturnToLibrary}
-              className="h-7 px-2.5 rounded-lg liquid-glass-btn text-zinc-300 hover:text-white flex items-center gap-1.5 transition-all cursor-pointer text-xs shadow-sm active:scale-95"
+              className="h-7 px-2.5 rounded-full liquid-glass-btn text-zinc-300 hover:text-white flex items-center gap-1.5 transition-all cursor-pointer text-xs shrink-0"
               aria-label="Return to Library"
             >
               <ArrowLeft className="w-3.5 h-3.5 text-zinc-400" />
@@ -69,7 +71,7 @@ export const TopBar: React.FC = () => {
         {viewMode === "freeplay" && (
           <Badge
             variant="outline"
-            className="text-[10px] py-0.5 px-2 text-zinc-400 bg-white/[0.04] border-white/[0.08]"
+            className="text-[10px] py-0.5 px-2.5 rounded-full text-zinc-400 bg-white/[0.04] border-white/[0.08]"
           >
             Free Play
           </Badge>
@@ -80,7 +82,8 @@ export const TopBar: React.FC = () => {
             filePath={activeSong.filePath}
             title={activeSong.title}
             isActiveSong
-            triggerClassName="h-7 w-7 rounded-lg liquid-glass-btn text-zinc-300 hover:text-white flex items-center justify-center transition-all cursor-pointer shadow-sm active:scale-95"
+            align="start"
+            triggerClassName="h-7 w-7 rounded-full liquid-glass-btn text-zinc-300 hover:text-white flex items-center justify-center transition-all cursor-pointer active:scale-95"
           />
         )}
       </div>

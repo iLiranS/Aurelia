@@ -61,7 +61,7 @@ const PopoverContent = React.forwardRef<
         onCloseAutoFocus?.(e);
       }}
       className={cn(
-        "z-50 w-72 rounded-xl liquid-glass-popover p-3.5 text-zinc-100 shadow-2xl outline-none animate-in fade-in-0 zoom-in-95 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95 data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2",
+        "z-50 w-72 rounded-2xl liquid-glass-popover p-3.5 text-zinc-100 outline-none origin-[var(--radix-popover-content-transform-origin)] animate-in fade-in-0 zoom-in-95 duration-200 ease-[cubic-bezier(0.34,1.56,0.64,1)] data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95 data-[state=closed]:duration-150 data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2",
         className
       )}
       {...props}

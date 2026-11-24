@@ -38,6 +38,8 @@ interface PieceActionsMenuProps {
   title: string;
   isActiveSong?: boolean;
   triggerClassName?: string;
+  triggerContent?: React.ReactNode;
+  align?: "start" | "center" | "end";
   contextPos?: { x: number; y: number } | null;
   onContextPosClear?: () => void;
 }
@@ -47,6 +49,8 @@ export const PieceActionsMenu: React.FC<PieceActionsMenuProps> = ({
   title,
   isActiveSong = false,
   triggerClassName,
+  triggerContent,
+  align = "end",
   contextPos = null,
   onContextPosClear,
 }) => {
@@ -304,7 +308,9 @@ export const PieceActionsMenu: React.FC<PieceActionsMenuProps> = ({
             aria-label="Piece actions"
           >
             {exportingFormat ? (
-              <Loader2 className="w-3.5 h-3.5 animate-spin text-primary" />
+              <Loader2 className="w-3.5 h-3.5 animate-spin text-primary shrink-0" />
+            ) : triggerContent ? (
+              triggerContent
             ) : (
               <MoreHorizontal className="w-3.5 h-3.5" />
             )}
@@ -313,7 +319,7 @@ export const PieceActionsMenu: React.FC<PieceActionsMenuProps> = ({
 
         <PopoverContent
           side="bottom"
-          align="end"
+          align={align}
           onClick={(e) => e.stopPropagation()}
           className="w-48 p-1.5 space-y-0.5 liquid-glass-popover rounded-xl shadow-2xl"
         >

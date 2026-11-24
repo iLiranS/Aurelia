@@ -1,5 +1,5 @@
 import React from "react";
-import { ChevronDown, Split, Music2, Volume2, VolumeX, GraduationCap } from "lucide-react";
+import { Split, Music2, Volume2, VolumeX, GraduationCap } from "lucide-react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { Switch } from "@/components/ui/switch";
@@ -44,17 +44,29 @@ export const HandControlsPopover: React.FC = () => {
   };
 
   const hasBothRole = Object.values(trackHands).some((r) => r === "both");
-  const showSplitSlider = useSplitPoint || hasBothRole;
 
-  // Active label for the dock trigger button
-  const triggerLabel =
-    leftHandActive && rightHandActive
-      ? "Both"
-      : leftHandActive
-        ? "Left"
-        : rightHandActive
-          ? "Right"
-          : "Muted";
+  const splitKeySlider = (
+    <div className="p-2 rounded-lg bg-black/30 border border-white/[0.08] space-y-2 animate-in fade-in-50 duration-200">
+      <div className="flex items-center justify-between text-xs">
+        <span className="text-[11px] text-zinc-400">Split Key</span>
+        <span className="font-mono font-semibold text-primary tabular-nums">
+          {midiToNoteName(splitPointMidi)} ({splitPointMidi})
+        </span>
+      </div>
+      <Slider
+        min={36} // C2
+        max={84} // C6
+        step={1}
+        value={[splitPointMidi]}
+        onValueChange={([val]) => setSplitPointMidi(val)}
+      />
+      <div className="flex justify-between text-[9px] text-zinc-500 font-mono">
+        <span>C2 (Bass)</span>
+        <span>C4 (Middle)</span>
+        <span>C6 (Treble)</span>
+      </div>
+    </div>
+  );
 
   return (
     <Popover>
@@ -62,25 +74,27 @@ export const HandControlsPopover: React.FC = () => {
         <TooltipTrigger asChild>
           <PopoverTrigger asChild>
             <button
-              className={`h-6 px-1.5 rounded-full flex items-center justify-center gap-1.5 text-[11px] font-medium text-zinc-200 hover:text-white transition-all cursor-pointer shadow-sm shrink-0 ${
-                studyMode ? "liquid-glass-accent" : "liquid-glass-btn"
+              className={`h-6 px-2 rounded-full flex items-center justify-center gap-1.5 transition-all cursor-pointer shrink-0 ${
+                studyMode ? "liquid-glass-accent text-zinc-100" : "liquid-glass-dock-btn"
               }`}
               aria-label="Practice Hands Settings"
             >
               {/* Dual Hand Glowing Dots */}
-              <div className="flex items-center gap-1 shrink-0">
+              <div className="flex items-center gap-1.5 shrink-0">
                 <span
-                  className="w-1.5 h-1.5 rounded-full transition-opacity shadow-[0_0_5px_currentColor]"
+                  className="w-2 h-2 rounded-full transition-opacity"
                   style={{
                     backgroundColor: leftHandColor,
-                    opacity: leftHandActive ? 1 : 0.25,
+                    opacity: leftHandActive ? 1 : 0.22,
+                    boxShadow: leftHandActive ? `0 0 6px ${leftHandColor}` : undefined,
                   }}
                 />
                 <span
-                  className="w-1.5 h-1.5 rounded-full transition-opacity shadow-[0_0_5px_currentColor]"
+                  className="w-2 h-2 rounded-full transition-opacity"
                   style={{
                     backgroundColor: rightHandColor,
-                    opacity: rightHandActive ? 1 : 0.25,
+                    opacity: rightHandActive ? 1 : 0.22,
+                    boxShadow: rightHandActive ? `0 0 6px ${rightHandColor}` : undefined,
                   }}
                 />
               </div>
@@ -88,9 +102,6 @@ export const HandControlsPopover: React.FC = () => {
               {studyMode && (
                 <GraduationCap className="w-3 h-3 text-primary shrink-0" />
               )}
-
-              <span className="w-8 text-center truncate shrink-0">{triggerLabel}</span>
-              <ChevronDown className="w-2.5 h-2.5 text-zinc-400 shrink-0" />
             </button>
           </PopoverTrigger>
         </TooltipTrigger>
@@ -115,14 +126,14 @@ export const HandControlsPopover: React.FC = () => {
             </span>
           </div>
 
-          <div className="grid grid-cols-3 gap-1 p-0.5 rounded-lg liquid-glass-btn">
+          <div className="grid grid-cols-3 gap-1 p-0.5 rounded-xl bg-black/40 border border-white/[0.08]">
             <button
               onClick={() => {
                 setLeftHandActive(true);
                 setRightHandActive(false);
               }}
-              className={`py-1 rounded-md text-[11px] font-medium transition-all active:scale-[0.97] cursor-pointer flex items-center justify-center gap-1 ${leftHandActive && !rightHandActive
-                ? "liquid-glass-active text-zinc-100 font-semibold"
+              className={`py-1 rounded-lg text-[11px] font-medium transition-all cursor-pointer flex items-center justify-center gap-1 liquid-glass-segment ${leftHandActive && !rightHandActive
+                ? "liquid-glass-segment-active text-zinc-100"
                 : "text-zinc-400 hover:text-zinc-200"
                 }`}
             >
@@ -138,8 +149,8 @@ export const HandControlsPopover: React.FC = () => {
                 setLeftHandActive(true);
                 setRightHandActive(true);
               }}
-              className={`py-1 rounded-md text-[11px] font-medium transition-all active:scale-[0.97] cursor-pointer ${leftHandActive && rightHandActive
-                ? "liquid-glass-active text-zinc-100 font-semibold"
+              className={`py-1 rounded-lg text-[11px] font-medium transition-all cursor-pointer liquid-glass-segment ${leftHandActive && rightHandActive
+                ? "liquid-glass-segment-active text-zinc-100"
                 : "text-zinc-400 hover:text-zinc-200"
                 }`}
             >
@@ -151,8 +162,8 @@ export const HandControlsPopover: React.FC = () => {
                 setLeftHandActive(false);
                 setRightHandActive(true);
               }}
-              className={`py-1 rounded-md text-[11px] font-medium transition-all active:scale-[0.97] cursor-pointer flex items-center justify-center gap-1 ${!leftHandActive && rightHandActive
-                ? "liquid-glass-active text-zinc-100 font-semibold"
+              className={`py-1 rounded-lg text-[11px] font-medium transition-all cursor-pointer flex items-center justify-center gap-1 liquid-glass-segment ${!leftHandActive && rightHandActive
+                ? "liquid-glass-segment-active text-zinc-100"
                 : "text-zinc-400 hover:text-zinc-200"
                 }`}
             >
@@ -232,29 +243,8 @@ export const HandControlsPopover: React.FC = () => {
             />
           </div>
 
-          {/* Split Point Slider */}
-          {showSplitSlider && (
-            <div className="p-2 rounded-lg bg-black/30 border border-white/[0.08] space-y-2 animate-in fade-in-50 duration-200">
-              <div className="flex items-center justify-between text-xs">
-                <span className="text-[11px] text-zinc-400">Split Key</span>
-                <span className="font-mono font-semibold text-primary tabular-nums">
-                  {midiToNoteName(splitPointMidi)} ({splitPointMidi})
-                </span>
-              </div>
-              <Slider
-                min={36} // C2
-                max={84} // C6
-                step={1}
-                value={[splitPointMidi]}
-                onValueChange={([val]) => setSplitPointMidi(val)}
-              />
-              <div className="flex justify-between text-[9px] text-zinc-500 font-mono">
-                <span>C2 (Bass)</span>
-                <span>C4 (Middle)</span>
-                <span>C6 (Treble)</span>
-              </div>
-            </div>
-          )}
+          {/* Split Point Slider (only when global Split by pitch is enabled) */}
+          {useSplitPoint && splitKeySlider}
         </div>
 
         {/* Track Hand Assignments (Multi-track mode) */}
@@ -290,7 +280,7 @@ export const HandControlsPopover: React.FC = () => {
                         </div>
 
                         {/* Segmented Hand Pill (R / L / Split / Off) */}
-                        <div className="flex items-center p-0.5 rounded-lg liquid-glass-btn shrink-0">
+                        <div className="flex items-center p-0.5 rounded-lg bg-black/40 border border-white/[0.08] shrink-0">
                           {(["right", "left", "both", "none"] as HandRole[]).map((role) => {
                             const isSelected = currentRole === role;
                             const label =
@@ -306,9 +296,9 @@ export const HandControlsPopover: React.FC = () => {
                               <button
                                 key={role}
                                 onClick={() => handleTrackRoleChange(track.trackIndex, role)}
-                                className={`px-2 py-0.5 rounded-md text-[10px] font-medium transition-all active:scale-[0.97] cursor-pointer ${isSelected
-                                  ? "liquid-glass-active text-zinc-100 font-semibold"
-                                  : "text-zinc-500 hover:text-zinc-300"
+                                className={`px-2 py-0.5 rounded-md text-[10px] font-medium transition-all cursor-pointer liquid-glass-segment ${isSelected
+                                  ? "liquid-glass-segment-active text-zinc-100"
+                                  : "text-zinc-400 hover:text-zinc-200"
                                   }`}
                               >
                                 {label}
@@ -321,6 +311,7 @@ export const HandControlsPopover: React.FC = () => {
                   })}
                 </div>
               </ScrollArea>
+              {hasBothRole && splitKeySlider}
             </div>
           </>
         )}

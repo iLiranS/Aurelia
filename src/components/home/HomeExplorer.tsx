@@ -532,14 +532,12 @@ export const HomeExplorer: React.FC = () => {
                         <PopoverTrigger asChild>
                           <button
                             type="button"
-                            className={`w-6 h-6 rounded-md flex items-center justify-center transition-colors cursor-pointer shrink-0 ${
-                              addMenuOpen
-                                ? "text-zinc-100 bg-white/[0.06]"
-                                : "text-zinc-400 hover:text-zinc-100 hover:bg-white/[0.04]"
+                            className={`w-6 h-6 rounded-lg liquid-glass-accent text-primary flex items-center justify-center cursor-pointer shrink-0 ${
+                              addMenuOpen ? "brightness-110" : ""
                             }`}
                             aria-label="Add MIDI or New Folder"
                           >
-                            <Plus className="w-3.5 h-3.5 text-primary" />
+                            <Plus className="w-3.5 h-3.5" />
                           </button>
                         </PopoverTrigger>
                       </TooltipTrigger>

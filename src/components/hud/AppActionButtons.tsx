@@ -38,21 +38,23 @@ export const AppActionButtons: React.FC<AppActionButtonsProps> = ({ mode }) => {
         </Tooltip>
       )}
 
-      {/* Keyboard Shortcuts Trigger */}
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <button
-            onClick={() => setShortcutDialogOpen(true)}
-            className="w-7 h-7 rounded-lg liquid-glass-btn flex items-center justify-center text-zinc-400 hover:text-zinc-100 transition-all cursor-pointer shadow-sm"
-            aria-label="Keyboard Shortcuts"
-          >
-            <Keyboard className="w-3.5 h-3.5" />
-          </button>
-        </TooltipTrigger>
-        <TooltipContent side="bottom" align="end">
-          <span>Shortcuts ({shortcutsShortcut})</span>
-        </TooltipContent>
-      </Tooltip>
+      {/* Keyboard Shortcuts Trigger (shown on Home; accessible via shortcut anywhere) */}
+      {mode === "home" && (
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <button
+              onClick={() => setShortcutDialogOpen(true)}
+              className="w-7 h-7 rounded-lg liquid-glass-btn flex items-center justify-center text-zinc-400 hover:text-zinc-100 transition-all cursor-pointer shadow-sm"
+              aria-label="Keyboard Shortcuts"
+            >
+              <Keyboard className="w-3.5 h-3.5" />
+            </button>
+          </TooltipTrigger>
+          <TooltipContent side="bottom" align="end">
+            <span>Shortcuts ({shortcutsShortcut})</span>
+          </TooltipContent>
+        </Tooltip>
+      )}
 
       {/* Hardware MIDI Keyboard Popover */}
       <MidiDevicePopover />

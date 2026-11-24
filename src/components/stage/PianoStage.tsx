@@ -11,10 +11,12 @@ import { HitEffects } from "./HitEffects";
 import { PianoPointerOverlay } from "./PianoPointerOverlay";
 import { NoteLabelsOverlay } from "./NoteLabelsOverlay";
 import { useThemeStore } from "@/stores/useThemeStore";
-import { usePlaybackStore } from "@/stores/usePlaybackStore";
+import { usePlaybackStore, cancelCountIn } from "@/stores/usePlaybackStore";
 import { useMidiStore } from "@/stores/useMidiStore";
 import { useViewStore } from "@/stores/useViewStore";
 import { activeNotes } from "@/engine/activeNotes";
+import { playbackClock } from "@/engine/playbackClock";
+import { audioPause, audioPlay, audioSeek } from "@/services/tauriApi";
 import {
   BLACK_KEYS,
   PIANO_KEYS,
@@ -562,9 +564,154 @@ const ActiveRangeVeils: React.FC = () => {
 export const PianoStage: React.FC = () => {
   const showKeyLabels = useThemeStore((s) => s.showKeyLabels);
   const bgColor = useThemeStore((s) => s.bgColor);
+  const stageRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const el = stageRef.current;
+    if (!el) return;
+
+    let isScrubbing = false;
+    let wasPlaying = false;
+    let targetSec = 0;
+    let currentSec = 0;
+    let lastWheelMs = 0;
+    let lastFrameMs = 0;
+    let rafId: number | null = null;
+    let idleTimer: ReturnType<typeof setTimeout> | null = null;
+
+    const commitScrub = () => {
+      if (rafId !== null) {
+        cancelAnimationFrame(rafId);
+        rafId = null;
+      }
+      if (idleTimer !== null) {
+        clearTimeout(idleTimer);
+        idleTimer = null;
+      }
+      if (!isScrubbing) return;
+
+      const state = usePlaybackStore.getState();
+      const duration = state.durationSec;
+      const finalSec = Math.max(0, Math.min(duration, targetSec));
+      const shouldResume = wasPlaying;
+
+      isScrubbing = false;
+      wasPlaying = false;
+
+      state.setDisplayTimeSec(finalSec);
+      playbackClock.seekLocal(finalSec);
+
+      void (async () => {
+        try {
+          await audioSeek(finalSec).catch(() => {});
+          if (shouldResume && usePlaybackStore.getState().isPlaying) {
+            await audioPlay().catch(() => {});
+          }
+        } finally {
+          playbackClock.seekLocal(finalSec);
+          playbackClock.setScrubbing(false);
+        }
+      })();
+    };
+
+    const scheduleCommit = () => {
+      if (idleTimer !== null) clearTimeout(idleTimer);
+      idleTimer = setTimeout(() => {
+        idleTimer = null;
+        const sinceLastWheel = performance.now() - lastWheelMs;
+        if (sinceLastWheel >= 140 && Math.abs(targetSec - currentSec) < 0.03) {
+          commitScrub();
+        } else {
+          scheduleCommit();
+        }
+      }, 150);
+    };
+
+    const step = (now: number) => {
+      if (!isScrubbing) return;
+      if (useViewStore.getState().viewMode !== "song") {
+        commitScrub();
+        return;
+      }
+
+      const dtSec = Math.min(0.05, Math.max(0, (now - lastFrameMs) / 1000));
+      lastFrameMs = now;
+
+      const alpha = 1 - Math.exp(-20 * dtSec);
+      currentSec += (targetSec - currentSec) * alpha;
+      if (Math.abs(targetSec - currentSec) < 0.005) {
+        currentSec = targetSec;
+      }
+
+      usePlaybackStore.getState().setDisplayTimeSec(currentSec);
+      playbackClock.seekLocal(currentSec);
+
+      if (currentSec !== targetSec || performance.now() - lastWheelMs < 150) {
+        rafId = requestAnimationFrame(step);
+      } else {
+        rafId = null;
+      }
+    };
+
+    const handleWheel = (e: WheelEvent) => {
+      if (useViewStore.getState().viewMode !== "song") return;
+      const state = usePlaybackStore.getState();
+      const duration = state.durationSec;
+      if (duration <= 0) return;
+
+      if (document.querySelector('[role="dialog"]')) return;
+
+      let dx = e.deltaX;
+      let dy = e.deltaY;
+      if (e.deltaMode === 1) {
+        dx *= 16;
+        dy *= 16;
+      } else if (e.deltaMode === 2) {
+        dx *= 400;
+        dy *= 400;
+      }
+
+      // Horizontal right (+dx) or vertical wheel up / trackpad pull-down (-dy) advances forward
+      const rawDelta = Math.abs(dx) > Math.abs(dy) ? dx : -dy;
+      if (Math.abs(rawDelta) < 0.01) return;
+
+      e.preventDefault();
+
+      if (!isScrubbing) {
+        cancelCountIn();
+        isScrubbing = true;
+        wasPlaying = state.isPlaying;
+        currentSec = playbackClock.getTime();
+        targetSec = currentSec;
+        lastFrameMs = performance.now();
+        playbackClock.setScrubbing(true);
+        if (wasPlaying) {
+          audioPause().catch(() => {});
+        }
+      }
+
+      const secPerPixel = Math.min(0.12, Math.max(0.025, duration * 0.0002));
+      targetSec = Math.max(0, Math.min(duration, targetSec + rawDelta * secPerPixel));
+      lastWheelMs = performance.now();
+
+      if (rafId === null) {
+        lastFrameMs = performance.now();
+        rafId = requestAnimationFrame(step);
+      }
+
+      scheduleCommit();
+    };
+
+    el.addEventListener("wheel", handleWheel, { passive: false });
+    return () => {
+      el.removeEventListener("wheel", handleWheel);
+      commitScrub();
+    };
+  }, []);
 
   return (
     <div
+      ref={stageRef}
       className="relative w-full h-full overflow-hidden select-none transition-colors duration-500"
       style={{ backgroundColor: bgColor }}
     >
@@ -634,20 +781,20 @@ export const PianoStage: React.FC = () => {
       {/* Crisp Key Labels across all 88 keys */}
       {showKeyLabels && (
         <>
-          {/* 52 White Key Labels along the bottom edge */}
-          <div className="absolute bottom-1.5 left-0 right-0 h-5 pointer-events-none select-none z-10">
+          {/* 52 White Key Labels resting cleanly above the ivory front bevel */}
+          <div className="absolute bottom-[1.35%] left-0 right-0 h-5 pointer-events-none select-none z-10">
             {WHITE_KEYS.map((key) => {
               const isC = key.pitchClass === 0;
               const isMiddleC = key.midi === 60;
               return (
                 <span
                   key={key.midi}
-                  className={`absolute bottom-0 font-mono -translate-x-1/2 tracking-tighter ${
+                  className={`absolute bottom-0 font-sans -translate-x-1/2 leading-none tracking-tight ${
                     isMiddleC
-                      ? "text-[10px] text-primary font-bold"
+                      ? "text-[11px] text-zinc-950 font-extrabold"
                       : isC
-                        ? "text-[10px] text-zinc-800 font-semibold"
-                        : "text-[9px] text-zinc-600 font-medium"
+                        ? "text-[10.5px] text-zinc-900 font-bold"
+                        : "text-[9.5px] text-zinc-700/90 font-semibold"
                   }`}
                   style={{
                     left: `${(key.centerX / 52) * 100}%`,
@@ -659,19 +806,25 @@ export const PianoStage: React.FC = () => {
             })}
           </div>
 
-          {/* 36 Black Key Sharp Labels (wide viewports only) */}
-          <div className="hidden xl:block absolute inset-0 pointer-events-none select-none z-10">
-            {BLACK_KEYS.map((key) => (
-              <span
-                key={key.midi}
-                className="absolute bottom-[7.4%] -translate-x-1/2 text-[8.5px] font-mono font-semibold text-zinc-200 drop-shadow-[0_1px_1px_rgba(0,0,0,0.9)] tracking-tighter"
-                style={{
-                  left: `${(key.centerX / 52) * 100}%`,
-                }}
-              >
-                {getNoteLetter(key.midi)}
-              </span>
-            ))}
+          {/* 36 Black Key Sharp Labels with crisp superscript # */}
+          <div className="hidden lg:block absolute inset-0 pointer-events-none select-none z-10">
+            {BLACK_KEYS.map((key) => {
+              const letter = getNoteLetter(key.midi).charAt(0);
+              return (
+                <span
+                  key={key.midi}
+                  className="absolute bottom-[7.6%] -translate-x-1/2 inline-flex items-start font-sans text-[9.5px] font-bold leading-none text-white/95 drop-shadow-[0_1px_2px_rgba(0,0,0,0.95)]"
+                  style={{
+                    left: `${(key.centerX / 52) * 100}%`,
+                  }}
+                >
+                  <span>{letter}</span>
+                  <span className="text-[7.5px] font-bold opacity-85 -mt-[1px] ml-[0.5px]">
+                    #
+                  </span>
+                </span>
+              );
+            })}
           </div>
         </>
       )}

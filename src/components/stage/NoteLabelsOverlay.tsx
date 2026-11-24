@@ -5,8 +5,11 @@ import { useLibraryStore } from "@/stores/useLibraryStore";
 import { usePlaybackStore } from "@/stores/usePlaybackStore";
 import { playbackClock } from "@/engine/playbackClock";
 import { freeplayNotes } from "@/engine/freeplayNotes";
-import { getKeyByMidi, getNoteLetter, resolveNoteHand } from "@/engine/pianoLayout";
+import { getKeyByMidi, resolveNoteHand } from "@/engine/pianoLayout";
 import type { MidiNote } from "@/types/midi";
+
+const BASE_LETTERS = ["C", "C", "D", "D", "E", "F", "F", "G", "G", "A", "A", "B"];
+const IS_SHARP_PC = [false, true, false, true, false, false, true, false, true, false, true, false];
 
 function findStartIndex(notes: MidiNote[], targetSec: number): number {
   let low = 0;
@@ -37,11 +40,11 @@ const NoteLabelsCanvas: React.FC = () => {
 
     let cssW = 0;
     let cssH = 0;
-    let dpr = Math.min(window.devicePixelRatio || 1, 1.5);
+    let dpr = Math.min(window.devicePixelRatio || 1, 2);
 
     const updateSize = () => {
       const rect = canvas.getBoundingClientRect();
-      dpr = Math.min(window.devicePixelRatio || 1, 1.5);
+      dpr = Math.min(window.devicePixelRatio || 1, 2);
       cssW = rect.width;
       cssH = rect.height;
       canvas.width = Math.max(1, Math.round(cssW * dpr));
@@ -67,9 +70,16 @@ const NoteLabelsCanvas: React.FC = () => {
 
       ctx.textAlign = "center";
       ctx.textBaseline = "middle";
+      ctx.lineJoin = "round";
+      ctx.miterLimit = 2;
 
-      let lastFontSize = -1;
-      let lastIsActive: boolean | null = null;
+      let lastFont = "";
+      const setFont = (font: string) => {
+        if (font !== lastFont) {
+          ctx.font = font;
+          lastFont = font;
+        }
+      };
 
       const drawNoteLabel = (
         midi: number,
@@ -86,24 +96,47 @@ const NoteLabelsCanvas: React.FC = () => {
         const barTopPx = cssH * (1 - (visibleTop - 18) / 82);
         const barH = barBottomPx - barTopPx;
 
-        if (barH < 16 || barW < 12) return;
+        if (barH < 15 || barW < 11) return;
 
-        const fontSize = Math.min(11, Math.max(8, Math.floor(barW * 0.58)));
-        if (fontSize !== lastFontSize) {
-          ctx.font = `600 ${fontSize}px ui-sans-serif, system-ui, sans-serif`;
-          lastFontSize = fontSize;
-        }
-
-        if (isHandActive !== lastIsActive) {
-          ctx.fillStyle = isHandActive
-            ? "rgba(9, 9, 11, 0.86)"
-            : "rgba(255, 255, 255, 0.45)";
-          lastIsActive = isHandActive;
-        }
+        const pc = ((midi % 12) + 12) % 12;
+        const letter = BASE_LETTERS[pc];
+        const isSharp = IS_SHARP_PC[pc];
 
         const textY =
-          barH > 26 ? barBottomPx - 10 : (barTopPx + barBottomPx) * 0.5;
-        ctx.fillText(getNoteLetter(midi), barX, textY);
+          barH > 26 ? barBottomPx - 11 : (barTopPx + barBottomPx) * 0.5;
+
+        // Soft fade-in at the very top edge of the waterfall
+        const topFade = Math.min(1, Math.max(0, textY / 28));
+        if (topFade <= 0.02) return;
+
+        const baseAlpha = (isHandActive ? 0.96 : 0.42) * topFade;
+        const strokeAlpha = (isHandActive ? 0.45 : 0.22) * topFade;
+
+        ctx.fillStyle = `rgba(255, 255, 255, ${baseAlpha.toFixed(3)})`;
+        ctx.strokeStyle = `rgba(9, 9, 11, ${strokeAlpha.toFixed(3)})`;
+        ctx.lineWidth = isSharp ? 2.0 : 2.4;
+
+        if (!isSharp) {
+          const fontSize = Math.min(12, Math.max(8.5, Math.floor(barW * 0.56)));
+          setFont(`700 ${fontSize}px ui-sans-serif, system-ui, -apple-system, sans-serif`);
+          ctx.strokeText(letter, barX, textY);
+          ctx.fillText(letter, barX, textY);
+        } else {
+          // Letter + crisp raised superscript # matching the black piano key labels
+          const letterSize = Math.min(10, Math.max(8, Math.floor(barW * 0.54)));
+          const sharpSize = Math.max(6.5, Math.round(letterSize * 0.74));
+          const letterOffsetX = -sharpSize * 0.34;
+          const sharpOffsetX = letterSize * 0.42;
+          const sharpOffsetY = -letterSize * 0.16;
+
+          setFont(`700 ${letterSize}px ui-sans-serif, system-ui, -apple-system, sans-serif`);
+          ctx.strokeText(letter, barX + letterOffsetX, textY);
+          ctx.fillText(letter, barX + letterOffsetX, textY);
+
+          setFont(`700 ${sharpSize}px ui-sans-serif, system-ui, -apple-system, sans-serif`);
+          ctx.strokeText("#", barX + sharpOffsetX, textY + sharpOffsetY);
+          ctx.fillText("#", barX + sharpOffsetX, textY + sharpOffsetY);
+        }
       };
 
       const viewMode = useViewStore.getState().viewMode;

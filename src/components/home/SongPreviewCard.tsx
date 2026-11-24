@@ -482,10 +482,10 @@ export const SongPreviewCard: React.FC<SongPreviewCardProps> = ({
         e.stopPropagation();
         setContextPos({ x: e.clientX, y: e.clientY });
       }}
-      className="group relative flex flex-col gap-2.5 p-2 rounded-2xl liquid-glass-btn cursor-pointer select-none transition-all duration-200 hover:-translate-y-0.5"
+      className="group relative flex flex-col gap-2.5 p-2 rounded-2xl liquid-glass-card cursor-pointer select-none transition-all duration-200 hover:-translate-y-0.5"
       style={{
         boxShadow: isHovered
-          ? `0 10px 28px -6px ${rightHandColor}28, inset 0 1px 0 0 rgba(255, 255, 255, 0.16)`
+          ? `0 10px 26px -8px ${rightHandColor}24, inset 0 1px 0 0 rgba(255, 255, 255, 0.10)`
           : undefined,
       }}
     >

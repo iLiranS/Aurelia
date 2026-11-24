@@ -4,7 +4,7 @@ import { cva, type VariantProps } from "class-variance-authority";
 import { cn } from "@/lib/utils";
 
 const buttonVariants = cva(
-  "inline-flex items-center justify-center whitespace-nowrap rounded-xl text-xs font-medium transition-all duration-200 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-40 select-none cursor-pointer active:scale-[0.97]",
+  "inline-flex items-center justify-center whitespace-nowrap rounded-xl text-xs font-medium transition-all duration-200 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-40 select-none cursor-pointer active:scale-[0.96]",
   {
     variants: {
       variant: {
@@ -19,11 +19,11 @@ const buttonVariants = cva(
         secondary:
           "liquid-glass-btn text-zinc-300 hover:text-white",
         destructive:
-          "bg-red-500/15 text-red-200 hover:bg-red-500/25 border border-red-500/30 backdrop-blur-md shadow-[inset_0_1px_0_0_rgba(255,255,255,0.15)]",
+          "bg-gradient-to-b from-red-500/25 to-red-500/12 text-red-100 hover:from-red-500/35 hover:to-red-500/18 border border-red-400/35 backdrop-blur-md shadow-[inset_0_1px_1px_rgba(255,255,255,0.32),inset_0_-1px_1px_rgba(239,68,68,0.28)]",
         outline:
-          "border border-white/[0.12] bg-transparent text-zinc-300 hover:bg-white/[0.06] hover:text-zinc-100 hover:border-white/[0.18]",
+          "border border-white/[0.14] bg-white/[0.02] text-zinc-300 hover:bg-white/[0.07] hover:text-zinc-100 hover:border-white/[0.24]",
         ghost:
-          "border border-transparent hover:border-white/[0.12] hover:bg-white/[0.07] text-zinc-400 hover:text-zinc-100 active:bg-white/[0.12]",
+          "border border-transparent hover:border-white/[0.14] hover:bg-white/[0.08] text-zinc-400 hover:text-zinc-100 active:bg-white/[0.13]",
         glass:
           "liquid-glass-btn text-zinc-300 hover:text-zinc-100",
         link:

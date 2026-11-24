@@ -209,8 +209,8 @@ export const SongListRow: React.FC<SongListRowProps> = ({
         e.stopPropagation();
         setContextPos({ x: e.clientX, y: e.clientY });
       }}
-      className={`group relative overflow-hidden flex items-center justify-between px-3.5 py-2.5 rounded-xl liquid-glass-btn active:!transform-none cursor-pointer transition-all select-none ${
-        isPreviewing ? "border-amber-400/30 bg-white/[0.06]" : "hover:border-white/18"
+      className={`group relative overflow-hidden flex items-center justify-between px-3.5 py-2.5 rounded-xl liquid-glass-card active:!transform-none cursor-pointer transition-all select-none ${
+        isPreviewing ? "bg-white/[0.09]" : ""
       }`}
     >
       {/* Left: Star, Icon & Title */}
