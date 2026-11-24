@@ -149,6 +149,15 @@ export async function audioSetStudyMode(
   await invoke("audio_set_study_mode", { enabled, waitRight, waitLeft });
 }
 
+export async function audioSetStudyRange(
+  skipOutOfRange: boolean,
+  minMidi: number,
+  maxMidi: number
+): Promise<void> {
+  if (!isTauri) return;
+  await invoke("audio_set_study_range", { skipOutOfRange, minMidi, maxMidi });
+}
+
 export async function audioStartPreview(
   filePath: string,
   startSec: number,

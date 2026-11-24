@@ -183,6 +183,9 @@ export const App: React.FC = () => {
         const savedMidiSettings = await getAppSetting("midi_hardware_v1");
         if (savedMidiSettings) {
           useMidiStore.getState().hydrateMidiSettings(savedMidiSettings);
+        } else {
+          const midiState = useMidiStore.getState();
+          midiState.setSkipOutOfRangeInStudy(midiState.skipOutOfRangeInStudy);
         }
         const initialDevices = await listMidiDevices();
         useMidiStore.getState().setDevices(initialDevices);

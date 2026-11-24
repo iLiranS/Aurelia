@@ -66,6 +66,11 @@ pub enum AudioCommand {
         wait_right: bool,
         wait_left: bool,
     },
+    SetStudyRange {
+        skip_out_of_range: bool,
+        min_midi: u8,
+        max_midi: u8,
+    },
     SwapBackend(Box<dyn AudioBackend>),
 }
 
@@ -99,6 +104,15 @@ impl std::fmt::Debug for AudioCommand {
                 f,
                 "AudioCommand::SetStudyMode({}, {}, {})",
                 enabled, wait_right, wait_left
+            ),
+            Self::SetStudyRange {
+                skip_out_of_range,
+                min_midi,
+                max_midi,
+            } => write!(
+                f,
+                "AudioCommand::SetStudyRange({}, {}, {})",
+                skip_out_of_range, min_midi, max_midi
             ),
             Self::SwapBackend(_) => write!(f, "AudioCommand::SwapBackend"),
         }
@@ -538,6 +552,13 @@ fn process_audio_block(
                 wait_left,
             } => {
                 sequencer.set_study_mode(enabled, wait_right, wait_left);
+            }
+            AudioCommand::SetStudyRange {
+                skip_out_of_range,
+                min_midi,
+                max_midi,
+            } => {
+                sequencer.set_study_range(skip_out_of_range, min_midi, max_midi);
             }
             AudioCommand::SwapBackend(new_backend) => {
                 backend.all_notes_off();

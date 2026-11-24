@@ -5,6 +5,7 @@ import { freeplayNotes } from "@/engine/freeplayNotes";
 import { usePlaybackStore } from "@/stores/usePlaybackStore";
 import { useViewStore } from "@/stores/useViewStore";
 import {
+  audioSetStudyRange,
   connectMidiDevice,
   disconnectMidiDevice,
   setAppSetting,
@@ -97,6 +98,7 @@ interface PersistedMidiSettings {
   keyCount: number;
   autoOctaveFollow: boolean;
   dimOutOfRange: boolean;
+  skipOutOfRangeInStudy: boolean;
   lastDeviceName: string | null;
 }
 
@@ -110,11 +112,23 @@ function persistMidiSettingsDebounced(state: PersistedMidiSettings) {
     keyCount: state.keyCount,
     autoOctaveFollow: state.autoOctaveFollow,
     dimOutOfRange: state.dimOutOfRange,
+    skipOutOfRangeInStudy: state.skipOutOfRangeInStudy,
     lastDeviceName: state.lastDeviceName,
   };
   saveTimeout = setTimeout(() => {
     setAppSetting("midi_hardware_v1", JSON.stringify(payload)).catch(() => {});
   }, 300);
+}
+
+function syncStudyRangeToRust(state: {
+  skipOutOfRangeInStudy: boolean;
+  minMidi: number;
+  keyCount: number;
+}) {
+  const maxMidi = Math.min(108, state.minMidi + state.keyCount - 1);
+  audioSetStudyRange(state.skipOutOfRangeInStudy, state.minMidi, maxMidi).catch(
+    () => {}
+  );
 }
 
 function clampMinMidi(minMidi: number, keyCount: number): number {
@@ -130,6 +144,7 @@ interface MidiState {
   keyCount: number;
   autoOctaveFollow: boolean;
   dimOutOfRange: boolean;
+  skipOutOfRangeInStudy: boolean;
   sustainDown: boolean;
   lastDeviceName: string | null;
 
@@ -142,6 +157,7 @@ interface MidiState {
   shiftOctave: (delta: -1 | 1) => void;
   setAutoOctaveFollow: (enabled: boolean) => void;
   setDimOutOfRange: (enabled: boolean) => void;
+  setSkipOutOfRangeInStudy: (enabled: boolean) => void;
   handleMidiLiveEvent: (payload: MidiLiveEventPayload) => void;
   hydrateMidiSettings: (rawJson: string) => void;
 }
@@ -154,6 +170,7 @@ export const useMidiStore = create<MidiState>((set, get) => ({
   keyCount: 88,
   autoOctaveFollow: true,
   dimOutOfRange: true,
+  skipOutOfRangeInStudy: true,
   sustainDown: false,
   lastDeviceName: null,
 
@@ -181,6 +198,7 @@ export const useMidiStore = create<MidiState>((set, get) => ({
           keyCount: cfg.keyCount,
           minMidi: cfg.defaultMinMidi,
         });
+        syncStudyRangeToRust(get());
       } else {
         set({
           connectedDevice: info.name,
@@ -211,14 +229,18 @@ export const useMidiStore = create<MidiState>((set, get) => ({
       keyCount: cfg.keyCount,
       minMidi: cfg.defaultMinMidi,
     });
-    persistMidiSettingsDebounced(get());
+    const next = get();
+    persistMidiSettingsDebounced(next);
+    syncStudyRangeToRust(next);
   },
 
   setMinMidi: (minMidi) => {
     const { keyCount } = get();
     const clamped = clampMinMidi(minMidi, keyCount);
     set({ minMidi: clamped });
-    persistMidiSettingsDebounced(get());
+    const next = get();
+    persistMidiSettingsDebounced(next);
+    syncStudyRangeToRust(next);
   },
 
   shiftOctave: (delta) => {
@@ -227,7 +249,9 @@ export const useMidiStore = create<MidiState>((set, get) => ({
     const nextMin = clampMinMidi(minMidi + delta * 12, keyCount);
     if (nextMin !== minMidi) {
       set({ minMidi: nextMin });
-      persistMidiSettingsDebounced(get());
+      const next = get();
+      persistMidiSettingsDebounced(next);
+      syncStudyRangeToRust(next);
     }
   },
 
@@ -239,6 +263,13 @@ export const useMidiStore = create<MidiState>((set, get) => ({
   setDimOutOfRange: (enabled) => {
     set({ dimOutOfRange: enabled });
     persistMidiSettingsDebounced(get());
+  },
+
+  setSkipOutOfRangeInStudy: (enabled) => {
+    set({ skipOutOfRangeInStudy: enabled });
+    const next = get();
+    persistMidiSettingsDebounced(next);
+    syncStudyRangeToRust(next);
   },
 
   handleMidiLiveEvent: (payload) => {
@@ -256,7 +287,9 @@ export const useMidiStore = create<MidiState>((set, get) => ({
         }
         if (nextMin !== state.minMidi) {
           set({ minMidi: nextMin });
-          persistMidiSettingsDebounced(get());
+          const next = get();
+          persistMidiSettingsDebounced(next);
+          syncStudyRangeToRust(next);
         }
       }
 
@@ -300,9 +333,14 @@ export const useMidiStore = create<MidiState>((set, get) => ({
           typeof parsed.autoOctaveFollow === "boolean" ? parsed.autoOctaveFollow : true,
         dimOutOfRange:
           typeof parsed.dimOutOfRange === "boolean" ? parsed.dimOutOfRange : true,
+        skipOutOfRangeInStudy:
+          typeof parsed.skipOutOfRangeInStudy === "boolean"
+            ? parsed.skipOutOfRangeInStudy
+            : true,
         lastDeviceName:
           typeof parsed.lastDeviceName === "string" ? parsed.lastDeviceName : null,
       });
+      syncStudyRangeToRust(get());
     } catch {
       // Ignore malformed JSON
     }

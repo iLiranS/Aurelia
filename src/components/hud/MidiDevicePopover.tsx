@@ -54,6 +54,7 @@ export const MidiDevicePopover: React.FC = () => {
   const keyCount = useMidiStore((s) => s.keyCount);
   const autoOctaveFollow = useMidiStore((s) => s.autoOctaveFollow);
   const dimOutOfRange = useMidiStore((s) => s.dimOutOfRange);
+  const skipOutOfRangeInStudy = useMidiStore((s) => s.skipOutOfRangeInStudy);
 
   const setDevices = useMidiStore((s) => s.setDevices);
   const connectDevice = useMidiStore((s) => s.connectDevice);
@@ -62,6 +63,7 @@ export const MidiDevicePopover: React.FC = () => {
   const shiftOctave = useMidiStore((s) => s.shiftOctave);
   const setAutoOctaveFollow = useMidiStore((s) => s.setAutoOctaveFollow);
   const setDimOutOfRange = useMidiStore((s) => s.setDimOutOfRange);
+  const setSkipOutOfRangeInStudy = useMidiStore((s) => s.setSkipOutOfRangeInStudy);
 
   const [isRefreshing, setIsRefreshing] = useState(false);
 
@@ -302,6 +304,25 @@ export const MidiDevicePopover: React.FC = () => {
               onCheckedChange={setAutoOctaveFollow}
             />
           </div>
+
+          {keyCount < 88 && (
+            <div className="flex items-center justify-between">
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <span className="text-xs text-zinc-300 cursor-help border-b border-dotted border-zinc-600">
+                    Skip Out-of-Range in Study
+                  </span>
+                </TooltipTrigger>
+                <TooltipContent side="left" className="max-w-[210px] text-[11px]">
+                  Study Mode will auto-play notes outside the active key window instead of waiting on them.
+                </TooltipContent>
+              </Tooltip>
+              <Switch
+                checked={skipOutOfRangeInStudy}
+                onCheckedChange={setSkipOutOfRangeInStudy}
+              />
+            </div>
+          )}
         </div>
 
         {/* Pre-Hardware Testing Tip */}

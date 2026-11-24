@@ -172,6 +172,20 @@ pub fn audio_set_study_mode(
 }
 
 #[tauri::command]
+pub fn audio_set_study_range(
+    engine: State<'_, AudioEngineHandle>,
+    skip_out_of_range: bool,
+    min_midi: u8,
+    max_midi: u8,
+) -> Result<(), String> {
+    engine.send(AudioCommand::SetStudyRange {
+        skip_out_of_range,
+        min_midi,
+        max_midi,
+    })
+}
+
+#[tauri::command]
 pub fn audio_start_preview(
     engine: State<'_, AudioEngineHandle>,
     file_path: String,

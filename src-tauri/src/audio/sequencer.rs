@@ -40,6 +40,9 @@ pub struct Sequencer {
     pub preview_bypass_study: bool,
     pub study_wait_right: bool,
     pub study_wait_left: bool,
+    pub study_skip_out_of_range: bool,
+    pub study_min_midi: u8,
+    pub study_max_midi: u8,
     pub is_waiting: bool,
     pub waiting_keys: [bool; 128],
     pub waiting_keys_hand: [u8; 128], // 0=none, 1=right, 2=left
@@ -70,6 +73,9 @@ impl Sequencer {
             preview_bypass_study: false,
             study_wait_right: true,
             study_wait_left: true,
+            study_skip_out_of_range: true,
+            study_min_midi: 21,
+            study_max_midi: 108,
             is_waiting: false,
             waiting_keys: [false; 128],
             waiting_keys_hand: [0; 128],
@@ -144,6 +150,32 @@ impl Sequencer {
         }
     }
 
+    pub fn set_study_range(&mut self, skip_out_of_range: bool, min_midi: u8, max_midi: u8) {
+        self.study_skip_out_of_range = skip_out_of_range;
+        self.study_min_midi = min_midi.min(max_midi);
+        self.study_max_midi = max_midi.max(min_midi);
+
+        if self.is_waiting && self.study_skip_out_of_range {
+            let mut changed = false;
+            for k in 0..128 {
+                if self.waiting_keys[k]
+                    && ((k as u8) < self.study_min_midi || (k as u8) > self.study_max_midi)
+                {
+                    self.waiting_keys[k] = false;
+                    self.waiting_keys_hand[k] = 0;
+                    changed = true;
+                }
+            }
+            if !self.waiting_keys.iter().any(|&w| w) {
+                self.is_waiting = false;
+                changed = true;
+            }
+            if changed {
+                self.wait_state_version += 1;
+            }
+        }
+    }
+
     pub fn on_live_note_on(&mut self, key: u8) {
         let idx = key as usize;
         if idx >= 128 {
@@ -162,6 +194,9 @@ impl Sequencer {
 
     pub fn is_required_in_study(&self, key: u8, track_index: u32, default_hand: u8) -> Option<u8> {
         if !self.study_mode || self.preview_bypass_study {
+            return None;
+        }
+        if self.study_skip_out_of_range && (key < self.study_min_midi || key > self.study_max_midi) {
             return None;
         }
         if !self.use_split_point
@@ -767,5 +802,83 @@ mod tests {
         assert!(seq.is_waiting);
         seq.set_study_mode(false, true, true);
         assert!(!seq.is_waiting);
+    }
+
+    #[test]
+    fn test_study_mode_skips_out_of_range_notes() {
+        let mut seq = Sequencer::new();
+        seq.events = vec![
+            SeqEvent {
+                time_sec: 0.1,
+                kind: SeqEventKind::NoteOn {
+                    key: 48, // Out of range (below 53)
+                    velocity: 90,
+                    track_index: 1,
+                    hand: 1,
+                },
+            },
+            SeqEvent {
+                time_sec: 0.3,
+                kind: SeqEventKind::NoteOn {
+                    key: 60, // Inside 53..=84
+                    velocity: 100,
+                    track_index: 0,
+                    hand: 0,
+                },
+            },
+        ];
+        seq.duration_sec = 5.0;
+        seq.is_playing = true;
+        seq.set_study_mode(true, true, true);
+        seq.set_study_range(true, 53, 84);
+
+        let mut left = vec![0.0f32; 200]; // 0.0 -> 0.2s
+        let mut right = vec![0.0f32; 200];
+        let mut mock = MockBackend::new();
+
+        // Note 48 should play automatically without freezing Study Mode
+        seq.render_block(&mut mock, &mut left, &mut right, 1000.0);
+        assert!(!seq.is_waiting);
+        assert_eq!(mock.notes_on.len(), 1);
+        assert_eq!(mock.notes_on[0].1, 48);
+
+        // Advance past 0.3s -> Note 60 is inside range, so Study Mode freezes
+        seq.render_block(&mut mock, &mut left, &mut right, 1000.0);
+        assert!(seq.is_waiting);
+        assert!(seq.waiting_keys[60]);
+
+        // Pressing 60 unblocks
+        seq.on_live_note_on(60);
+        assert!(!seq.is_waiting);
+    }
+
+    #[test]
+    fn test_study_mode_range_update_unblocks_waiting_key() {
+        let mut seq = Sequencer::new();
+        seq.events = vec![SeqEvent {
+            time_sec: 0.2,
+            kind: SeqEventKind::NoteOn {
+                key: 48,
+                velocity: 90,
+                track_index: 1,
+                hand: 1,
+            },
+        }];
+        seq.duration_sec = 5.0;
+        seq.is_playing = true;
+        seq.set_study_mode(true, true, true);
+        seq.set_study_range(false, 53, 84);
+
+        let mut left = vec![0.0f32; 500];
+        let mut right = vec![0.0f32; 500];
+        let mut mock = MockBackend::new();
+
+        seq.render_block(&mut mock, &mut left, &mut right, 1000.0);
+        assert!(seq.is_waiting);
+        assert!(seq.waiting_keys[48]);
+
+        seq.set_study_range(true, 53, 84);
+        assert!(!seq.is_waiting);
+        assert!(!seq.waiting_keys[48]);
     }
 }
