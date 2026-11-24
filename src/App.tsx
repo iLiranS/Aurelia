@@ -114,14 +114,35 @@ export const App: React.FC = () => {
     let unlistenMidiDevicesFn: (() => void) | undefined;
     let unlistenMidiDisconnectedFn: (() => void) | undefined;
 
+    let cancelled = false;
+    let libraryRefreshSeq = 0;
+
+    async function refreshLibrarySnapshot() {
+      const seq = ++libraryRefreshSeq;
+      const updatedSongs = await getLibrarySongs();
+      if (cancelled || seq !== libraryRefreshSeq) return;
+      setSongs(updatedSongs);
+      await useLibraryStore.getState().refreshFolders();
+    }
+
     async function initLibraryAndClock() {
       try {
+        // Register library:updated before initial fetch so early startup scan emits are never missed
+        const unlistenFolder = await listen("library:updated", async () => {
+          await refreshLibrarySnapshot();
+        });
+        if (cancelled) {
+          unlistenFolder();
+          return;
+        }
+        unlistenFolderFn = unlistenFolder;
+
         const root = await getRootFolder();
+        if (cancelled) return;
         if (root) {
           setRootFolder(root);
-          const songs = await getLibrarySongs();
-          setSongs(songs);
-          await useLibraryStore.getState().refreshFolders();
+          await refreshLibrarySnapshot();
+          if (cancelled) return;
         }
 
         // Hydrate saved studio appearance settings from SQLite
@@ -143,6 +164,12 @@ export const App: React.FC = () => {
         } else {
           const { reverbMix, touch } = useSoundStore.getState();
           audioSetSoundProfile({ reverbMix, touch }).catch(() => {});
+        }
+
+        // Hydrate saved master volume from SQLite
+        const savedVolume = await getAppSetting("master_volume_v1");
+        if (savedVolume !== null) {
+          usePlaybackStore.getState().hydrateVolume(savedVolume);
         }
 
         // Hydrate active soundfont and discover available soundfonts
@@ -209,14 +236,6 @@ export const App: React.FC = () => {
         );
         unlistenSoundFontFn = unlistenSoundFont;
 
-        // Listen for library updates (add/delete/rename)
-        const unlistenFolder = await listen("library:updated", async () => {
-          const updatedSongs = await getLibrarySongs();
-          setSongs(updatedSongs);
-          await useLibraryStore.getState().refreshFolders();
-        });
-        unlistenFolderFn = unlistenFolder;
-
         // Listen for Rust master audio playback clock
         const unlistenClock = await listen<PlaybackClockPayload>(
           "playback:clock",
@@ -255,6 +274,7 @@ export const App: React.FC = () => {
     initLibraryAndClock();
 
     return () => {
+      cancelled = true;
       if (unlistenFolderFn) unlistenFolderFn();
       if (unlistenClockFn) unlistenClockFn();
       if (unlistenStudyWaitFn) unlistenStudyWaitFn();

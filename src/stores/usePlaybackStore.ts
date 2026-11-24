@@ -1,5 +1,15 @@
 import { create } from "zustand";
 import type { HandRole } from "@/types/midi";
+import { audioSetVolume, setAppSetting } from "@/services/tauriApi";
+
+let volumeSaveTimeout: ReturnType<typeof setTimeout> | null = null;
+
+function debouncedSaveVolume(volume: number) {
+  if (volumeSaveTimeout) clearTimeout(volumeSaveTimeout);
+  volumeSaveTimeout = setTimeout(() => {
+    setAppSetting("master_volume_v1", String(volume)).catch(() => {});
+  }, 300);
+}
 
 interface PlaybackState {
   isPlaying: boolean;
@@ -25,6 +35,7 @@ interface PlaybackState {
   setInitialBpm: (bpm: number) => void;
   setTempoScale: (scale: number) => void;
   setVolume: (volume: number) => void;
+  hydrateVolume: (rawValue: string) => void;
   setRightHandActive: (active: boolean) => void;
   setLeftHandActive: (active: boolean) => void;
   toggleRightHand: () => void;
@@ -67,7 +78,18 @@ export const usePlaybackStore = create<PlaybackState>((set) => ({
   setDurationSec: (durationSec) => set({ durationSec }),
   setInitialBpm: (initialBpm) => set({ initialBpm }),
   setTempoScale: (tempoScale) => set({ tempoScale }),
-  setVolume: (volume) => set({ volume }),
+  setVolume: (volume) => {
+    const clamped = Math.max(0, Math.min(1, volume));
+    set({ volume: clamped });
+    debouncedSaveVolume(clamped);
+  },
+  hydrateVolume: (rawValue) => {
+    const parsed = Number(rawValue);
+    if (!Number.isFinite(parsed)) return;
+    const clamped = Math.max(0, Math.min(1, parsed));
+    set({ volume: clamped });
+    audioSetVolume(clamped).catch(() => {});
+  },
   setRightHandActive: (rightHandActive) => set({ rightHandActive }),
   setLeftHandActive: (leftHandActive) => set({ leftHandActive }),
   toggleRightHand: () => set((state) => ({ rightHandActive: !state.rightHandActive })),

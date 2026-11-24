@@ -4,7 +4,9 @@ use tauri::{AppHandle, Emitter, State};
 use walkdir::WalkDir;
 
 use crate::library::db::LibraryDb;
-use crate::library::scanner::{scan_folder, FolderWatcherManager};
+use crate::library::scanner::{
+    canonicalize_root, file_size_and_mtime_ms, index_single_file, FolderWatcherManager,
+};
 use crate::midi::{HandRole, ParsedSong, SongSettings, SongSummary};
 
 #[tauri::command]
@@ -13,7 +15,7 @@ pub fn get_root_folder(db: State<'_, Arc<LibraryDb>>) -> Result<Option<String>, 
 }
 
 #[tauri::command]
-pub fn set_root_folder(
+pub async fn set_root_folder(
     app: AppHandle,
     db: State<'_, Arc<LibraryDb>>,
     watcher: State<'_, Mutex<FolderWatcherManager>>,
@@ -24,15 +26,25 @@ pub fn set_root_folder(
         return Err(format!("Path {:?} is not a valid directory", folder_path));
     }
 
-    db.set_setting("root_folder", &folder_path)?;
-    let songs = scan_folder(&path, &db)?;
+    let canon_path = canonicalize_root(&path);
+    let canon_str = canon_path.to_string_lossy().to_string();
+    db.set_setting("root_folder", &canon_str)?;
 
-    // Update active folder watcher
-    if let Ok(mut mgr) = watcher.lock() {
-        let _ = mgr.watch(path, app, (*db).clone());
-    }
+    // Update active folder watcher before scanning
+    let coordinator = {
+        let mut mgr = watcher.lock().map_err(|e| e.to_string())?;
+        let _ = mgr.watch(canon_path.clone(), app.clone(), (*db).clone());
+        mgr.coordinator()
+    };
 
-    Ok(songs)
+    let db_arc = (*db).clone();
+    let app_clone = app.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        coordinator.run_blocking_scan(&canon_path, &db_arc, Some(&app_clone), false)?;
+        db_arc.get_all_songs()
+    })
+    .await
+    .map_err(|e| format!("Folder scan task failed: {}", e))?
 }
 
 #[tauri::command]
@@ -158,8 +170,13 @@ pub fn delete_library_song(
 
     std::fs::remove_file(&canon_target)
         .map_err(|e| format!("Failed to delete file: {}", e))?;
-    let _ = db.delete_song_by_path(&file_path);
-    let _ = scan_folder(&canon_root, &db);
+
+    let canon_target_str = canon_target.to_string_lossy().to_string();
+    let deleted = db.delete_song_by_path(&canon_target_str)?;
+    if deleted == 0 && canon_target_str != file_path {
+        db.delete_song_by_path(&file_path)?;
+    }
+
     let _ = app.emit("library:updated", ());
     Ok(())
 }
@@ -293,9 +310,46 @@ pub fn move_library_song(
     std::fs::rename(&canon_src, &dest_path)
         .map_err(|e| format!("Failed to move file: {}", e))?;
 
-    let _ = scan_folder(&canon_root, &db);
+    let canon_src_str = canon_src.to_string_lossy().to_string();
+    let dest_str = dest_path.to_string_lossy().to_string();
+    let new_rel = dest_path
+        .strip_prefix(&canon_root)
+        .unwrap_or(&dest_path)
+        .to_string_lossy()
+        .replace('\\', "/");
+    let new_folder = dest_path
+        .parent()
+        .and_then(|p| p.strip_prefix(&canon_root).ok())
+        .map(|p| p.to_string_lossy().replace('\\', "/"))
+        .unwrap_or_default();
+    let (file_size, file_mtime_ms) = file_size_and_mtime_ms(&dest_path);
+
+    let mut updated = db.update_song_location_by_path(
+        &canon_src_str,
+        &dest_str,
+        &new_rel,
+        &new_folder,
+        None,
+        file_size,
+        file_mtime_ms,
+    )?;
+    if updated == 0 && canon_src_str != file_path {
+        updated = db.update_song_location_by_path(
+            &file_path,
+            &dest_str,
+            &new_rel,
+            &new_folder,
+            None,
+            file_size,
+            file_mtime_ms,
+        )?;
+    }
+    if updated == 0 {
+        index_single_file(&canon_root, &dest_path, &db)?;
+    }
+
     let _ = app.emit("library:updated", ());
-    Ok(dest_path.to_string_lossy().to_string())
+    Ok(dest_str)
 }
 
 #[tauri::command]
@@ -344,15 +398,53 @@ pub fn rename_library_song(
     std::fs::rename(&canon_src, &dest_path)
         .map_err(|e| format!("Failed to rename file: {}", e))?;
 
-    let _ = scan_folder(&canon_root, &db);
+    let canon_src_str = canon_src.to_string_lossy().to_string();
+    let dest_str = dest_path.to_string_lossy().to_string();
+    let new_rel = dest_path
+        .strip_prefix(&canon_root)
+        .unwrap_or(&dest_path)
+        .to_string_lossy()
+        .replace('\\', "/");
+    let new_folder = dest_path
+        .parent()
+        .and_then(|p| p.strip_prefix(&canon_root).ok())
+        .map(|p| p.to_string_lossy().replace('\\', "/"))
+        .unwrap_or_default();
+    let (file_size, file_mtime_ms) = file_size_and_mtime_ms(&dest_path);
+
+    let mut updated = db.update_song_location_by_path(
+        &canon_src_str,
+        &dest_str,
+        &new_rel,
+        &new_folder,
+        Some(&safe_title),
+        file_size,
+        file_mtime_ms,
+    )?;
+    if updated == 0 && canon_src_str != file_path {
+        updated = db.update_song_location_by_path(
+            &file_path,
+            &dest_str,
+            &new_rel,
+            &new_folder,
+            Some(&safe_title),
+            file_size,
+            file_mtime_ms,
+        )?;
+    }
+    if updated == 0 {
+        index_single_file(&canon_root, &dest_path, &db)?;
+    }
+
     let _ = app.emit("library:updated", ());
-    Ok(dest_path.to_string_lossy().to_string())
+    Ok(dest_str)
 }
 
 #[tauri::command]
-pub fn rename_library_folder(
+pub async fn rename_library_folder(
     app: AppHandle,
     db: State<'_, Arc<LibraryDb>>,
+    watcher: State<'_, Mutex<FolderWatcherManager>>,
     relative_path: String,
     new_name: String,
 ) -> Result<String, String> {
@@ -387,24 +479,35 @@ pub fn rename_library_folder(
         return Err("A folder with that name already exists".to_string());
     }
 
-    std::fs::rename(&canon_src, &dest_dir)
-        .map_err(|e| format!("Failed to rename folder: {}", e))?;
-
-    let _ = scan_folder(&canon_root, &db);
-    let _ = app.emit("library:updated", ());
-
     let new_rel = dest_dir
         .strip_prefix(&canon_root)
         .unwrap_or(&dest_dir)
         .to_string_lossy()
         .replace('\\', "/");
+
+    let coordinator = watcher
+        .lock()
+        .map_err(|e| e.to_string())?
+        .coordinator();
+    let db_arc = (*db).clone();
+    let app_clone = app.clone();
+    tauri::async_runtime::spawn_blocking(move || -> Result<(), String> {
+        std::fs::rename(&canon_src, &dest_dir)
+            .map_err(|e| format!("Failed to rename folder: {}", e))?;
+        coordinator.run_blocking_scan(&canon_root, &db_arc, Some(&app_clone), true)?;
+        Ok(())
+    })
+    .await
+    .map_err(|e| format!("Folder rescan task failed: {}", e))??;
+
     Ok(new_rel)
 }
 
 #[tauri::command]
-pub fn delete_library_folder(
+pub async fn delete_library_folder(
     app: AppHandle,
     db: State<'_, Arc<LibraryDb>>,
+    watcher: State<'_, Mutex<FolderWatcherManager>>,
     relative_path: String,
 ) -> Result<(), String> {
     let canon_root = canonical_root(&db)?;
@@ -425,10 +528,18 @@ pub fn delete_library_folder(
         return Err("Target is not a directory".to_string());
     }
 
-    std::fs::remove_dir_all(&canon_target)
-        .map_err(|e| format!("Failed to delete folder: {}", e))?;
-
-    let _ = scan_folder(&canon_root, &db);
-    let _ = app.emit("library:updated", ());
-    Ok(())
+    let coordinator = watcher
+        .lock()
+        .map_err(|e| e.to_string())?
+        .coordinator();
+    let db_arc = (*db).clone();
+    let app_clone = app.clone();
+    tauri::async_runtime::spawn_blocking(move || -> Result<(), String> {
+        std::fs::remove_dir_all(&canon_target)
+            .map_err(|e| format!("Failed to delete folder: {}", e))?;
+        coordinator.run_blocking_scan(&canon_root, &db_arc, Some(&app_clone), true)?;
+        Ok(())
+    })
+    .await
+    .map_err(|e| format!("Folder rescan task failed: {}", e))?
 }

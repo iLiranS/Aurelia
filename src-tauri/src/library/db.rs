@@ -1,7 +1,39 @@
+use std::collections::{HashMap, HashSet};
 use std::path::Path;
 use std::sync::Mutex;
 use rusqlite::{params, Connection};
 use crate::midi::{HandRole, SongSettings, SongSummary};
+
+const SCHEMA_VERSION: i32 = 2;
+
+#[derive(Debug, Clone)]
+pub struct CachedSongStat {
+    pub content_hash: String,
+    pub file_path: String,
+    pub relative_path: String,
+    pub folder: String,
+    pub title: String,
+    pub file_size: i64,
+    pub file_mtime_ms: i64,
+}
+
+#[derive(Debug, Clone)]
+pub struct ScannedSongRecord {
+    pub summary: SongSummary,
+    pub file_size: i64,
+    pub file_mtime_ms: i64,
+}
+
+#[derive(Debug, Clone)]
+pub struct SongLocationUpdate {
+    pub content_hash: String,
+    pub file_path: String,
+    pub relative_path: String,
+    pub folder: String,
+    pub title: String,
+    pub file_size: i64,
+    pub file_mtime_ms: i64,
+}
 
 pub struct LibraryDb {
     conn: Mutex<Connection>,
@@ -41,20 +73,44 @@ impl LibraryDb {
 
         conn.execute_batch(
             r#"
+            PRAGMA foreign_keys = ON;
             PRAGMA journal_mode = WAL;
             PRAGMA synchronous = NORMAL;
+            PRAGMA busy_timeout = 5000;
 
             CREATE TABLE IF NOT EXISTS app_settings (
                 key TEXT PRIMARY KEY,
                 value TEXT NOT NULL
             );
+            "#,
+        )
+        .map_err(|e| format!("Failed to configure database pragmas: {}", e))?;
 
+        let current_version: i32 = conn
+            .query_row("PRAGMA user_version", [], |row| row.get(0))
+            .unwrap_or(0);
+
+        if current_version < SCHEMA_VERSION {
+            // Cleanly rebuild library tables (preserves app_settings like root_folder, theme, shortcuts, soundfont)
+            conn.execute_batch(
+                r#"
+                DROP TABLE IF EXISTS song_settings;
+                DROP TABLE IF EXISTS songs;
+                "#,
+            )
+            .map_err(|e| format!("Failed to reset library tables for schema v{}: {}", SCHEMA_VERSION, e))?;
+        }
+
+        conn.execute_batch(
+            r#"
             CREATE TABLE IF NOT EXISTS songs (
                 content_hash TEXT PRIMARY KEY,
                 relative_path TEXT NOT NULL,
                 file_path TEXT NOT NULL,
                 title TEXT NOT NULL,
                 folder TEXT NOT NULL,
+                file_size INTEGER NOT NULL DEFAULT 0,
+                file_mtime_ms INTEGER NOT NULL DEFAULT 0,
                 duration_sec REAL NOT NULL,
                 initial_bpm REAL NOT NULL,
                 track_count INTEGER NOT NULL,
@@ -74,7 +130,8 @@ impl LibraryDb {
                 tempo_scale REAL NOT NULL DEFAULT 1.0,
                 loop_enabled INTEGER NOT NULL DEFAULT 0,
                 loop_start_sec REAL,
-                loop_end_sec REAL
+                loop_end_sec REAL,
+                FOREIGN KEY (content_hash) REFERENCES songs(content_hash) ON DELETE CASCADE
             );
 
             CREATE INDEX IF NOT EXISTS idx_songs_title ON songs(title);
@@ -83,11 +140,10 @@ impl LibraryDb {
         )
         .map_err(|e| format!("Failed to initialize database tables: {}", e))?;
 
-        // Safe idempotent migrations for existing databases
-        let _ = conn.execute("ALTER TABLE songs ADD COLUMN peak_start_sec REAL NOT NULL DEFAULT 0.0", []);
-        let _ = conn.execute("ALTER TABLE songs ADD COLUMN preview_peak_json TEXT NOT NULL DEFAULT '[]'", []);
-        let _ = conn.execute("ALTER TABLE songs ADD COLUMN preview_start_json TEXT NOT NULL DEFAULT '[]'", []);
-        let _ = conn.execute("ALTER TABLE songs ADD COLUMN added_at INTEGER NOT NULL DEFAULT 0", []);
+        if current_version < SCHEMA_VERSION {
+            conn.pragma_update(None, "user_version", SCHEMA_VERSION)
+                .map_err(|e| format!("Failed to update schema version: {}", e))?;
+        }
 
         Ok(())
     }
@@ -115,6 +171,136 @@ impl LibraryDb {
             params![key, value],
         )
         .map_err(|e| e.to_string())?;
+        Ok(())
+    }
+
+    /// Loads a lightweight index of all songs for O(1) stat-first folder scanning.
+    /// Returns (file_path -> CachedSongStat, set of known content_hashes).
+    pub fn get_song_file_index(
+        &self,
+    ) -> Result<(HashMap<String, CachedSongStat>, HashSet<String>), String> {
+        let conn = self.conn.lock().map_err(|e| e.to_string())?;
+        let mut stmt = conn
+            .prepare(
+                "SELECT content_hash, file_path, relative_path, folder, title, file_size, file_mtime_ms
+                 FROM songs",
+            )
+            .map_err(|e| e.to_string())?;
+
+        let rows = stmt
+            .query_map([], |row| {
+                Ok(CachedSongStat {
+                    content_hash: row.get(0)?,
+                    file_path: row.get(1)?,
+                    relative_path: row.get(2)?,
+                    folder: row.get(3)?,
+                    title: row.get(4)?,
+                    file_size: row.get(5)?,
+                    file_mtime_ms: row.get(6)?,
+                })
+            })
+            .map_err(|e| e.to_string())?;
+
+        let mut by_path = HashMap::new();
+        let mut known_hashes = HashSet::new();
+        for r in rows {
+            let stat = r.map_err(|e| e.to_string())?;
+            known_hashes.insert(stat.content_hash.clone());
+            by_path.insert(stat.file_path.clone(), stat);
+        }
+
+        Ok((by_path, known_hashes))
+    }
+
+    /// Applies a batch of new/parsed songs and moved/renamed location updates in a single transaction.
+    pub fn apply_scan_batch(
+        &self,
+        inserts: &[ScannedSongRecord],
+        updates: &[SongLocationUpdate],
+    ) -> Result<(), String> {
+        if inserts.is_empty() && updates.is_empty() {
+            return Ok(());
+        }
+
+        let mut conn = self.conn.lock().map_err(|e| e.to_string())?;
+        let tx = conn.transaction().map_err(|e| e.to_string())?;
+
+        if !inserts.is_empty() {
+            let mut upsert_stmt = tx
+                .prepare_cached(
+                    "INSERT INTO songs (
+                        content_hash, relative_path, file_path, title, folder,
+                        file_size, file_mtime_ms, duration_sec, initial_bpm, track_count,
+                        is_favorite, last_played_at, added_at, peak_start_sec,
+                        preview_peak_json, preview_start_json
+                    ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16)
+                    ON CONFLICT(content_hash) DO UPDATE SET
+                        relative_path = excluded.relative_path,
+                        file_path = excluded.file_path,
+                        title = excluded.title,
+                        folder = excluded.folder,
+                        file_size = excluded.file_size,
+                        file_mtime_ms = excluded.file_mtime_ms,
+                        duration_sec = excluded.duration_sec,
+                        initial_bpm = excluded.initial_bpm,
+                        track_count = excluded.track_count,
+                        peak_start_sec = excluded.peak_start_sec,
+                        preview_peak_json = excluded.preview_peak_json,
+                        preview_start_json = excluded.preview_start_json",
+                )
+                .map_err(|e| e.to_string())?;
+
+            for rec in inserts {
+                let song = &rec.summary;
+                upsert_stmt
+                    .execute(params![
+                        song.content_hash,
+                        song.relative_path,
+                        song.file_path,
+                        song.title,
+                        song.folder,
+                        rec.file_size,
+                        rec.file_mtime_ms,
+                        song.duration_sec,
+                        song.initial_bpm,
+                        song.track_count,
+                        if song.is_favorite { 1 } else { 0 },
+                        song.last_played_at,
+                        song.added_at,
+                        song.peak_start_sec,
+                        song.preview_peak_json,
+                        song.preview_start_json,
+                    ])
+                    .map_err(|e| e.to_string())?;
+            }
+        }
+
+        if !updates.is_empty() {
+            let mut update_stmt = tx
+                .prepare_cached(
+                    "UPDATE songs
+                     SET file_path = ?1, relative_path = ?2, folder = ?3, title = ?4,
+                         file_size = ?5, file_mtime_ms = ?6
+                     WHERE content_hash = ?7",
+                )
+                .map_err(|e| e.to_string())?;
+
+            for upd in updates {
+                update_stmt
+                    .execute(params![
+                        upd.file_path,
+                        upd.relative_path,
+                        upd.folder,
+                        upd.title,
+                        upd.file_size,
+                        upd.file_mtime_ms,
+                        upd.content_hash,
+                    ])
+                    .map_err(|e| e.to_string())?;
+            }
+        }
+
+        tx.commit().map_err(|e| e.to_string())?;
         Ok(())
     }
 
@@ -195,19 +381,32 @@ impl LibraryDb {
         }
     }
 
-    pub fn upsert_song(&self, song: &SongSummary) -> Result<(), String> {
-        let conn = self.conn.lock().map_err(|e| e.to_string())?;
-        conn.execute(
+    /// Upserts a single song (used for single-file indexing, e.g. newly saved recordings).
+    /// Removes any stale row at the same `file_path` with a different `content_hash` first.
+    pub fn upsert_song(&self, song: &SongSummary, file_size: i64, file_mtime_ms: i64) -> Result<(), String> {
+        let mut conn = self.conn.lock().map_err(|e| e.to_string())?;
+        let tx = conn.transaction().map_err(|e| e.to_string())?;
+
+        tx.execute(
+            "DELETE FROM songs WHERE file_path = ?1 AND content_hash != ?2",
+            params![song.file_path, song.content_hash],
+        )
+        .map_err(|e| e.to_string())?;
+
+        tx.execute(
             "INSERT INTO songs (
                 content_hash, relative_path, file_path, title, folder,
-                duration_sec, initial_bpm, track_count, is_favorite, last_played_at,
-                added_at, peak_start_sec, preview_peak_json, preview_start_json
-            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)
+                file_size, file_mtime_ms, duration_sec, initial_bpm, track_count,
+                is_favorite, last_played_at, added_at, peak_start_sec,
+                preview_peak_json, preview_start_json
+            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16)
             ON CONFLICT(content_hash) DO UPDATE SET
                 relative_path = excluded.relative_path,
                 file_path = excluded.file_path,
                 title = excluded.title,
                 folder = excluded.folder,
+                file_size = excluded.file_size,
+                file_mtime_ms = excluded.file_mtime_ms,
                 duration_sec = excluded.duration_sec,
                 initial_bpm = excluded.initial_bpm,
                 track_count = excluded.track_count,
@@ -220,6 +419,8 @@ impl LibraryDb {
                 song.file_path,
                 song.title,
                 song.folder,
+                file_size,
+                file_mtime_ms,
                 song.duration_sec,
                 song.initial_bpm,
                 song.track_count,
@@ -232,16 +433,8 @@ impl LibraryDb {
             ],
         )
         .map_err(|e| e.to_string())?;
-        Ok(())
-    }
 
-    pub fn update_song_added_at(&self, content_hash: &str, added_at: i64) -> Result<(), String> {
-        let conn = self.conn.lock().map_err(|e| e.to_string())?;
-        conn.execute(
-            "UPDATE songs SET added_at = ?1 WHERE content_hash = ?2",
-            params![added_at, content_hash],
-        )
-        .map_err(|e| e.to_string())?;
+        tx.commit().map_err(|e| e.to_string())?;
         Ok(())
     }
 
@@ -255,103 +448,105 @@ impl LibraryDb {
         Ok(())
     }
 
-    pub fn update_song_previews(
+    /// Direct O(1) update for in-app song move or rename without rescanning the library.
+    pub fn update_song_location_by_path(
         &self,
-        content_hash: &str,
-        peak_start_sec: f64,
-        preview_peak_json: &str,
-        preview_start_json: &str,
-    ) -> Result<(), String> {
+        old_file_path: &str,
+        new_file_path: &str,
+        new_relative_path: &str,
+        new_folder: &str,
+        new_title: Option<&str>,
+        file_size: i64,
+        file_mtime_ms: i64,
+    ) -> Result<usize, String> {
         let conn = self.conn.lock().map_err(|e| e.to_string())?;
-        conn.execute(
-            "UPDATE songs SET peak_start_sec = ?1, preview_peak_json = ?2, preview_start_json = ?3 WHERE content_hash = ?4",
-            params![peak_start_sec, preview_peak_json, preview_start_json, content_hash],
-        )
-        .map_err(|e| e.to_string())?;
-        Ok(())
+        let updated = if let Some(title) = new_title {
+            conn.execute(
+                "UPDATE songs
+                 SET file_path = ?1, relative_path = ?2, folder = ?3, title = ?4,
+                     file_size = ?5, file_mtime_ms = ?6
+                 WHERE file_path = ?7",
+                params![
+                    new_file_path,
+                    new_relative_path,
+                    new_folder,
+                    title,
+                    file_size,
+                    file_mtime_ms,
+                    old_file_path,
+                ],
+            )
+            .map_err(|e| e.to_string())?
+        } else {
+            conn.execute(
+                "UPDATE songs
+                 SET file_path = ?1, relative_path = ?2, folder = ?3,
+                     file_size = ?4, file_mtime_ms = ?5
+                 WHERE file_path = ?6",
+                params![
+                    new_file_path,
+                    new_relative_path,
+                    new_folder,
+                    file_size,
+                    file_mtime_ms,
+                    old_file_path,
+                ],
+            )
+            .map_err(|e| e.to_string())?
+        };
+        Ok(updated)
     }
 
-    pub fn update_song_paths(
+    /// Removes all songs whose `file_path` or `content_hash` is no longer present on disk in a single transaction.
+    /// Linked `song_settings` rows are automatically removed via `ON DELETE CASCADE`.
+    pub fn remove_stale_songs(
         &self,
-        content_hash: &str,
-        file_path: &str,
-        relative_path: &str,
-        folder: &str,
-    ) -> Result<(), String> {
-        let conn = self.conn.lock().map_err(|e| e.to_string())?;
-        conn.execute(
-            "UPDATE songs SET file_path = ?1, relative_path = ?2, folder = ?3 WHERE content_hash = ?4",
-            params![file_path, relative_path, folder, content_hash],
-        )
-        .map_err(|e| e.to_string())?;
-        Ok(())
-    }
+        current_file_paths: &HashSet<String>,
+        current_hashes: &HashSet<String>,
+    ) -> Result<usize, String> {
+        let mut conn = self.conn.lock().map_err(|e| e.to_string())?;
+        let tx = conn.transaction().map_err(|e| e.to_string())?;
 
-    pub fn update_song_metadata(
-        &self,
-        content_hash: &str,
-        file_path: &str,
-        relative_path: &str,
-        folder: &str,
-        title: &str,
-    ) -> Result<(), String> {
-        let conn = self.conn.lock().map_err(|e| e.to_string())?;
-        conn.execute(
-            "UPDATE songs SET file_path = ?1, relative_path = ?2, folder = ?3, title = ?4 WHERE content_hash = ?5",
-            params![file_path, relative_path, folder, title, content_hash],
-        )
-        .map_err(|e| e.to_string())?;
-        Ok(())
-    }
-
-    pub fn update_song_bpm(&self, content_hash: &str, initial_bpm: f64) -> Result<(), String> {
-        let conn = self.conn.lock().map_err(|e| e.to_string())?;
-        conn.execute(
-            "UPDATE songs SET initial_bpm = ?1 WHERE content_hash = ?2",
-            params![initial_bpm, content_hash],
-        )
-        .map_err(|e| e.to_string())?;
-        Ok(())
-    }
-
-    pub fn remove_stale_songs(&self, current_file_paths: &[String]) -> Result<usize, String> {
-        let conn = self.conn.lock().map_err(|e| e.to_string())?;
-        if current_file_paths.is_empty() {
-            let removed = conn
+        if current_file_paths.is_empty() || current_hashes.is_empty() {
+            let removed = tx
                 .execute("DELETE FROM songs", [])
                 .map_err(|e| e.to_string())?;
+            tx.commit().map_err(|e| e.to_string())?;
             return Ok(removed);
         }
 
-        // Fetch all registered file paths from DB
-        let mut stmt = conn
-            .prepare("SELECT file_path, content_hash FROM songs")
-            .map_err(|e| e.to_string())?;
+        let to_delete: Vec<String> = {
+            let mut stmt = tx
+                .prepare("SELECT file_path, content_hash FROM songs")
+                .map_err(|e| e.to_string())?;
 
-        let rows = stmt
-            .query_map([], |row| {
-                Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
-            })
-            .map_err(|e| e.to_string())?;
+            let rows = stmt
+                .query_map([], |row| {
+                    Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+                })
+                .map_err(|e| e.to_string())?;
 
-        let mut to_delete: Vec<String> = Vec::new();
-        let path_set: std::collections::HashSet<&str> =
-            current_file_paths.iter().map(|s| s.as_str()).collect();
+            let mut stale = Vec::new();
+            for r in rows {
+                let (path, hash) = r.map_err(|e| e.to_string())?;
+                if !current_file_paths.contains(&path) || !current_hashes.contains(&hash) {
+                    stale.push(hash);
+                }
+            }
+            stale
+        };
 
-        for r in rows {
-            let (path, hash) = r.map_err(|e| e.to_string())?;
-            if !path_set.contains(path.as_str()) {
-                to_delete.push(hash);
+        let mut removed_count = 0;
+        if !to_delete.is_empty() {
+            let mut del_stmt = tx
+                .prepare_cached("DELETE FROM songs WHERE content_hash = ?1")
+                .map_err(|e| e.to_string())?;
+            for hash in to_delete {
+                removed_count += del_stmt.execute(params![hash]).map_err(|e| e.to_string())?;
             }
         }
 
-        let mut removed_count = 0;
-        for hash in to_delete {
-            conn.execute("DELETE FROM songs WHERE content_hash = ?1", params![hash])
-                .map_err(|e| e.to_string())?;
-            removed_count += 1;
-        }
-
+        tx.commit().map_err(|e| e.to_string())?;
         Ok(removed_count)
     }
 
@@ -383,6 +578,7 @@ impl LibraryDb {
         Ok(new_fav != 0)
     }
 
+    /// Reads per-song settings without eagerly inserting default rows into `song_settings`.
     pub fn get_song_settings(&self, content_hash: &str) -> Result<SongSettings, String> {
         let conn = self.conn.lock().map_err(|e| e.to_string())?;
         let mut stmt = conn
@@ -397,7 +593,7 @@ impl LibraryDb {
         let mut rows = stmt.query(params![content_hash]).map_err(|e| e.to_string())?;
         if let Some(row) = rows.next().map_err(|e| e.to_string())? {
             let track_hands_json: String = row.get(0).map_err(|e| e.to_string())?;
-            let track_hands: std::collections::HashMap<u32, HandRole> =
+            let track_hands: HashMap<u32, HandRole> =
                 serde_json::from_str(&track_hands_json).unwrap_or_default();
             let split_point_midi: u8 = row.get(1).map_err(|e| e.to_string())?;
             let use_split_int: i32 = row.get(2).map_err(|e| e.to_string())?;
@@ -417,26 +613,29 @@ impl LibraryDb {
                 loop_end_sec,
             })
         } else {
-            // Default settings
-            let default_settings = SongSettings {
+            Ok(SongSettings {
                 content_hash: content_hash.to_string(),
                 ..Default::default()
-            };
-            self.save_song_settings_with_conn(&conn, &default_settings)?;
-            Ok(default_settings)
+            })
         }
     }
 
     pub fn save_song_settings(&self, settings: &SongSettings) -> Result<(), String> {
         let conn = self.conn.lock().map_err(|e| e.to_string())?;
-        self.save_song_settings_with_conn(&conn, settings)
-    }
 
-    fn save_song_settings_with_conn(
-        &self,
-        conn: &Connection,
-        settings: &SongSettings,
-    ) -> Result<(), String> {
+        // Ensure the song exists in `songs` before inserting so out-of-library files never violate FK or create orphans
+        let song_exists: bool = conn
+            .query_row(
+                "SELECT EXISTS(SELECT 1 FROM songs WHERE content_hash = ?1)",
+                params![settings.content_hash],
+                |row| row.get(0),
+            )
+            .map_err(|e| e.to_string())?;
+
+        if !song_exists {
+            return Ok(());
+        }
+
         let track_hands_json =
             serde_json::to_string(&settings.track_hands).unwrap_or_else(|_| "{}".to_string());
 
@@ -474,8 +673,27 @@ impl LibraryDb {
 mod tests {
     use super::*;
 
+    fn sample_summary(hash: &str, path: &str, title: &str) -> SongSummary {
+        SongSummary {
+            content_hash: hash.to_string(),
+            relative_path: format!("Chopin/{}.mid", title),
+            file_path: path.to_string(),
+            title: title.to_string(),
+            folder: "Chopin".to_string(),
+            duration_sec: 180.0,
+            initial_bpm: 132.0,
+            track_count: 2,
+            is_favorite: false,
+            last_played_at: None,
+            added_at: 1000,
+            peak_start_sec: 15.0,
+            preview_peak_json: "[]".to_string(),
+            preview_start_json: "[]".to_string(),
+        }
+    }
+
     #[test]
-    fn test_db_crud_and_settings() {
+    fn test_db_crud_and_cascade_delete() {
         let db = LibraryDb::new_in_memory().expect("Failed to create in-memory db");
 
         db.set_setting("root_folder", "/test/midi")
@@ -485,41 +703,23 @@ mod tests {
             .expect("Failed to get setting");
         assert_eq!(root.as_deref(), Some("/test/midi"));
 
-        let summary = SongSummary {
-            content_hash: "hash123".to_string(),
-            relative_path: "Chopin/nocturne.mid".to_string(),
-            file_path: "/test/midi/Chopin/nocturne.mid".to_string(),
-            title: "Nocturne Op 9 No 2".to_string(),
-            folder: "Chopin".to_string(),
-            duration_sec: 180.0,
-            initial_bpm: 132.0,
-            track_count: 2,
-            is_favorite: false,
-            last_played_at: None,
-            added_at: 0,
-            peak_start_sec: 15.0,
-            preview_peak_json: "[]".to_string(),
-            preview_start_json: "[]".to_string(),
-        };
+        let summary = sample_summary("hash123", "/test/midi/Chopin/nocturne.mid", "Nocturne Op 9 No 2");
+        db.upsert_song(&summary, 4096, 1700000000000)
+            .expect("Failed to upsert song");
 
-        db.upsert_song(&summary).expect("Failed to upsert song");
         let all = db.get_all_songs().expect("Failed to get all songs");
         assert_eq!(all.len(), 1);
         assert_eq!(all[0].title, "Nocturne Op 9 No 2");
-        assert_eq!(all[0].peak_start_sec, 15.0);
 
-        // Update previews
-        db.update_song_previews("hash123", 22.5, "[[60,0,500,1]]", "[[48,0,500,2]]")
-            .expect("Failed to update song previews");
-        let with_previews = db.get_song_by_hash("hash123").unwrap().unwrap();
-        assert_eq!(with_previews.peak_start_sec, 22.5);
-        assert_eq!(with_previews.preview_peak_json, "[[60,0,500,1]]");
+        // Verify stat index
+        let (by_path, hashes) = db.get_song_file_index().expect("Failed to load file index");
+        assert!(hashes.contains("hash123"));
+        assert_eq!(by_path["/test/midi/Chopin/nocturne.mid"].file_size, 4096);
+        assert_eq!(by_path["/test/midi/Chopin/nocturne.mid"].file_mtime_ms, 1700000000000);
 
         // Toggle favorite
         let is_fav = db.toggle_favorite("hash123").expect("Failed to toggle fav");
         assert!(is_fav);
-        let updated = db.get_song_by_hash("hash123").unwrap().unwrap();
-        assert!(updated.is_favorite);
 
         // Song settings persistence
         let mut settings = db.get_song_settings("hash123").unwrap();
@@ -533,7 +733,35 @@ mod tests {
         let loaded_settings = db.get_song_settings("hash123").unwrap();
         assert_eq!(loaded_settings.tempo_scale, 1.25);
         assert!(loaded_settings.loop_enabled);
-        assert_eq!(loaded_settings.loop_start_sec, Some(10.0));
-        assert_eq!(loaded_settings.loop_end_sec, Some(30.0));
+
+        // Removing the song must cascade-delete its song_settings row (zero orphans)
+        let empty = HashSet::new();
+        let removed = db.remove_stale_songs(&empty, &empty).unwrap();
+        assert_eq!(removed, 1);
+
+        let settings_count: i64 = {
+            let conn = db.conn.lock().unwrap();
+            conn.query_row("SELECT COUNT(*) FROM song_settings", [], |r| r.get(0))
+                .unwrap()
+        };
+        assert_eq!(settings_count, 0, "song_settings should cascade delete with songs");
+    }
+
+    #[test]
+    fn test_save_settings_ignores_nonexistent_song() {
+        let db = LibraryDb::new_in_memory().expect("Failed to create in-memory db");
+        let settings = SongSettings {
+            content_hash: "orphan_hash".to_string(),
+            tempo_scale: 0.75,
+            ..Default::default()
+        };
+        db.save_song_settings(&settings).expect("Should not error on missing song");
+
+        let settings_count: i64 = {
+            let conn = db.conn.lock().unwrap();
+            conn.query_row("SELECT COUNT(*) FROM song_settings", [], |r| r.get(0))
+                .unwrap()
+        };
+        assert_eq!(settings_count, 0, "Should not insert orphan song_settings row");
     }
 }

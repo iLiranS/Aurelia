@@ -26,12 +26,23 @@ pub fn run() {
 
             let mut watcher_mgr = FolderWatcherManager::new();
 
-            // If a root_folder was previously saved, scan it and start watcher
+            // If a root_folder was previously saved, start watcher and reconcile in the background
+            // so the window opens immediately with cached SQLite rows.
             if let Ok(Some(saved_root)) = db.get_setting("root_folder") {
                 let path = PathBuf::from(&saved_root);
                 if path.exists() && path.is_dir() {
-                    let _ = crate::library::scanner::scan_folder(&path, &db);
-                    let _ = watcher_mgr.watch(path, app.handle().clone(), db.clone());
+                    let canon_path = crate::library::scanner::canonicalize_root(&path);
+                    let canon_str = canon_path.to_string_lossy();
+                    if canon_str != saved_root {
+                        let _ = db.set_setting("root_folder", &canon_str);
+                    }
+                    let _ = watcher_mgr.watch(canon_path.clone(), app.handle().clone(), db.clone());
+                    watcher_mgr.coordinator().trigger_background_scan(
+                        canon_path,
+                        None,
+                        app.handle().clone(),
+                        db.clone(),
+                    );
                 }
             }
 

@@ -6,7 +6,7 @@ use tauri::{AppHandle, Emitter, Manager, State};
 use crate::audio::dsp::SoundProfile;
 use crate::audio::offline_render::{render_midi_to_audio, AudioExportFormat};
 use crate::library::db::LibraryDb;
-use crate::library::scanner::scan_folder;
+use crate::library::scanner::{canonicalize_root, index_single_file};
 use crate::midi::writer::{write_freeplay_midi, FreeplayRecordingPayload};
 
 #[derive(Debug, Clone, Serialize)]
@@ -85,10 +85,11 @@ pub fn save_freeplay_midi(
         .filter(|s| !s.trim().is_empty())
         .ok_or_else(|| "NO_ROOT_FOLDER".to_string())?;
 
-    let root_path = PathBuf::from(&root_folder);
-    if !root_path.exists() || !root_path.is_dir() {
+    let raw_root_path = PathBuf::from(&root_folder);
+    if !raw_root_path.exists() || !raw_root_path.is_dir() {
         return Err("NO_ROOT_FOLDER".to_string());
     }
+    let root_path = canonicalize_root(&raw_root_path);
 
     let recordings_dir = root_path.join("Recordings");
     std::fs::create_dir_all(&recordings_dir)
@@ -99,7 +100,9 @@ pub fn save_freeplay_midi(
 
     write_freeplay_midi(&target_path, &payload)?;
 
-    let _ = scan_folder(&root_path, &db);
+    if let Err(err) = index_single_file(&root_path, &target_path, &db) {
+        eprintln!("Warning: failed to index saved recording {:?}: {}", target_path, err);
+    }
     let _ = app.emit("library:updated", ());
 
     Ok(SavedRecordingResult {
