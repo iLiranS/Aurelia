@@ -1,6 +1,9 @@
 import { create } from "zustand";
-import type { HandRole } from "@/types/midi";
-import { audioSetVolume, setAppSetting } from "@/services/tauriApi";
+import type { HandRole, TimeSignatureEvent } from "@/types/midi";
+import { audioPlay, audioSetVolume, setAppSetting } from "@/services/tauriApi";
+import { countInEngine } from "@/engine/countIn";
+import { playbackClock } from "@/engine/playbackClock";
+import { useLibraryStore } from "@/stores/useLibraryStore";
 
 let volumeSaveTimeout: ReturnType<typeof setTimeout> | null = null;
 
@@ -30,6 +33,8 @@ interface PlaybackState {
   muteInactiveHandAudio: boolean;
   studyMode: boolean;
   isWaitingForInput: boolean;
+  countInBars: 0 | 1 | 2;
+  countInBeat: { beat: number; totalRemaining: number; beatsPerBar: number } | null;
 
   setIsPlaying: (isPlaying: boolean) => void;
   setDurationSec: (durationSec: number) => void;
@@ -54,6 +59,11 @@ interface PlaybackState {
   toggleLoop: () => void;
   setLoopPoints: (start: number | null | undefined, end: number | null | undefined) => void;
   setDisplayTimeSec: (timeSec: number) => void;
+  setCountInBars: (bars: 0 | 1 | 2) => void;
+  hydrateCountInBars: (rawValue: string) => void;
+  setCountInBeat: (
+    beat: { beat: number; totalRemaining: number; beatsPerBar: number } | null
+  ) => void;
   resetPlayback: () => void;
 }
 
@@ -76,6 +86,8 @@ export const usePlaybackStore = create<PlaybackState>((set) => ({
   muteInactiveHandAudio: false,
   studyMode: false,
   isWaitingForInput: false,
+  countInBars: 0,
+  countInBeat: null,
 
   setIsPlaying: (isPlaying) => set({ isPlaying }),
   setDurationSec: (durationSec) => set({ durationSec }),
@@ -116,7 +128,19 @@ export const usePlaybackStore = create<PlaybackState>((set) => ({
       loopEndSec: typeof end === "number" ? end : null,
     }),
   setDisplayTimeSec: (displayTimeSec) => set({ displayTimeSec }),
-  resetPlayback: () =>
+  setCountInBars: (countInBars) => {
+    set({ countInBars });
+    setAppSetting("count_in_bars_v1", String(countInBars)).catch(() => {});
+  },
+  hydrateCountInBars: (rawValue) => {
+    const parsed = Number(rawValue);
+    if (parsed === 0 || parsed === 1 || parsed === 2) {
+      set({ countInBars: parsed });
+    }
+  },
+  setCountInBeat: (countInBeat) => set({ countInBeat }),
+  resetPlayback: () => {
+    countInEngine.cancel();
     set({
       isPlaying: false,
       displayTimeSec: 0,
@@ -124,5 +148,83 @@ export const usePlaybackStore = create<PlaybackState>((set) => ({
       loopStartSec: null,
       loopEndSec: null,
       transposeSemitones: 0,
-    }),
+      countInBeat: null,
+    });
+  },
 }));
+
+function getBeatsPerBarAtTime(
+  timeSignatures: TimeSignatureEvent[] | undefined,
+  timeSec: number
+): number {
+  if (!timeSignatures || timeSignatures.length === 0) return 4;
+  let active = timeSignatures[0];
+  for (let i = 1; i < timeSignatures.length; i++) {
+    if (timeSignatures[i].timeSec <= timeSec + 1e-4) {
+      active = timeSignatures[i];
+    } else {
+      break;
+    }
+  }
+  return Math.max(1, active.numerator);
+}
+
+export function cancelCountIn(): void {
+  if (countInEngine.isActive()) {
+    countInEngine.cancel();
+  }
+  if (usePlaybackStore.getState().countInBeat !== null) {
+    usePlaybackStore.getState().setCountInBeat(null);
+  }
+}
+
+export async function startPlaybackWithOptionalCountIn(
+  barsOverride?: 1 | 2
+): Promise<void> {
+  if (countInEngine.isActive()) {
+    cancelCountIn();
+    return;
+  }
+
+  const state = usePlaybackStore.getState();
+  const bars = barsOverride ?? state.countInBars;
+
+  if (bars === 0) {
+    state.setIsPlaying(true);
+    playbackClock.syncFromRust(state.displayTimeSec, true, state.tempoScale);
+    await audioPlay();
+    return;
+  }
+
+  const activeSong = useLibraryStore.getState().activeSong;
+  const currentSec = playbackClock.getTime();
+  const beatsPerBar = getBeatsPerBarAtTime(activeSong?.timeSignatures, currentSec);
+  const effectiveBpm = Math.max(30, Math.min(240, state.initialBpm * state.tempoScale));
+
+  countInEngine.start({
+    bars,
+    beatsPerBar,
+    effectiveBpm,
+    onBeat: (beat, totalRemaining, bpb) => {
+      usePlaybackStore.getState().setCountInBeat({
+        beat,
+        totalRemaining,
+        beatsPerBar: bpb,
+      });
+    },
+    onComplete: () => {
+      const latest = usePlaybackStore.getState();
+      latest.setCountInBeat(null);
+      latest.setIsPlaying(true);
+      playbackClock.syncFromRust(
+        playbackClock.getTime(),
+        true,
+        latest.tempoScale
+      );
+      audioPlay().catch(() => {});
+    },
+    onCancel: () => {
+      usePlaybackStore.getState().setCountInBeat(null);
+    },
+  });
+}

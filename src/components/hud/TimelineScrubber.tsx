@@ -1,5 +1,5 @@
 import React, { useRef, useState } from "react";
-import { usePlaybackStore } from "@/stores/usePlaybackStore";
+import { usePlaybackStore, cancelCountIn } from "@/stores/usePlaybackStore";
 import { playbackClock } from "@/engine/playbackClock";
 import { audioSeek } from "@/services/tauriApi";
 
@@ -30,6 +30,7 @@ export const TimelineScrubber: React.FC = () => {
   // Seek main track position
   const seekToClientX = (clientX: number) => {
     if (!barRef.current || durationSec <= 0) return;
+    cancelCountIn();
     const rect = barRef.current.getBoundingClientRect();
     const pct = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
     const targetSec = pct * durationSec;
@@ -168,7 +169,7 @@ export const TimelineScrubber: React.FC = () => {
           <div
             className={`absolute top-0 bottom-0 pointer-events-none transition-opacity ${
               loopEnabled
-                ? "bg-amber-400/35 border-x border-amber-400/80"
+                ? "bg-primary/35 border-x border-primary/80"
                 : "bg-white/10 border-x border-white/20 opacity-50"
             }`}
             style={{
@@ -203,14 +204,14 @@ export const TimelineScrubber: React.FC = () => {
           <div
             className={`w-3.5 h-3.5 rounded-full font-mono font-bold text-[8px] flex items-center justify-center shadow-lg transition-transform ${
               activeDrag === "A"
-                ? "scale-140 bg-amber-300 text-black shadow-amber-400/50"
-                : "bg-amber-400 text-black group-hover/pinA:scale-130"
+                ? "scale-140 bg-primary brightness-110 text-black shadow-primary/50"
+                : "bg-primary text-black group-hover/pinA:scale-130"
             }`}
           >
             A
           </div>
           {/* Tooltip badge on hover/drag */}
-          <span className="absolute -top-4 text-[9px] font-mono font-semibold text-amber-400 bg-black/85 px-1 py-0.2 rounded border border-amber-400/30 opacity-0 group-hover/pinA:opacity-100 transition-opacity pointer-events-none whitespace-nowrap">
+          <span className="absolute -bottom-4 text-[9px] font-mono font-semibold text-primary bg-black/85 px-1 py-0.2 rounded border border-primary/30 opacity-0 group-hover/pinA:opacity-100 transition-opacity pointer-events-none whitespace-nowrap">
             {formatSec(loopStartSec)}
           </span>
         </div>
@@ -228,14 +229,14 @@ export const TimelineScrubber: React.FC = () => {
           <div
             className={`w-3.5 h-3.5 rounded-full font-mono font-bold text-[8px] flex items-center justify-center shadow-lg transition-transform ${
               activeDrag === "B"
-                ? "scale-140 bg-amber-300 text-black shadow-amber-400/50"
-                : "bg-amber-400 text-black group-hover/pinB:scale-130"
+                ? "scale-140 bg-primary brightness-110 text-black shadow-primary/50"
+                : "bg-primary text-black group-hover/pinB:scale-130"
             }`}
           >
             B
           </div>
           {/* Tooltip badge on hover/drag */}
-          <span className="absolute -top-4 text-[9px] font-mono font-semibold text-amber-400 bg-black/85 px-1 py-0.2 rounded border border-amber-400/30 opacity-0 group-hover/pinB:opacity-100 transition-opacity pointer-events-none whitespace-nowrap">
+          <span className="absolute -bottom-4 text-[9px] font-mono font-semibold text-primary bg-black/85 px-1 py-0.2 rounded border border-primary/30 opacity-0 group-hover/pinB:opacity-100 transition-opacity pointer-events-none whitespace-nowrap">
             {formatSec(loopEndSec)}
           </span>
         </div>

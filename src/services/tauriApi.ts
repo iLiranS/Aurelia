@@ -95,13 +95,15 @@ export async function audioSetTempo(tempoScale: number): Promise<void> {
 export async function audioSetLoop(
   enabled: boolean,
   startSec?: number | null,
-  endSec?: number | null
+  endSec?: number | null,
+  pauseOnWrap: boolean = false
 ): Promise<void> {
   if (!isTauri) return;
   await invoke("audio_set_loop", {
     enabled,
     startSec: startSec ?? null,
     endSec: endSec ?? null,
+    pauseOnWrap,
   });
 }
 

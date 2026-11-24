@@ -22,6 +22,8 @@ export const TempoPopover: React.FC = () => {
   const setTempoScale = usePlaybackStore((s) => s.setTempoScale);
   const transposeSemitones = usePlaybackStore((s) => s.transposeSemitones);
   const setTransposeSemitones = usePlaybackStore((s) => s.setTransposeSemitones);
+  const countInBars = usePlaybackStore((s) => s.countInBars);
+  const setCountInBars = usePlaybackStore((s) => s.setCountInBars);
   const displayTimeSec = usePlaybackStore((s) => s.displayTimeSec);
   const isPlaying = usePlaybackStore((s) => s.isPlaying);
 
@@ -147,6 +149,34 @@ export const TempoPopover: React.FC = () => {
             >
               <Plus className="w-3 h-3" />
             </button>
+          </div>
+        </div>
+
+        <Separator className="bg-white/10" />
+
+        <div className="space-y-1.5">
+          <span className="text-xs font-semibold text-zinc-200 block">Count-In</span>
+          <div className="grid grid-cols-3 gap-1 p-1 rounded-xl liquid-glass-segment">
+            {([
+              { value: 0, label: "Off" },
+              { value: 1, label: "1 Bar" },
+              { value: 2, label: "2 Bars" },
+            ] as const).map((opt) => {
+              const active = countInBars === opt.value;
+              return (
+                <button
+                  key={opt.value}
+                  onClick={() => setCountInBars(opt.value)}
+                  className={`h-6 rounded-lg text-[10px] font-medium transition-all cursor-pointer ${
+                    active
+                      ? "bg-primary text-zinc-950 font-semibold shadow-sm"
+                      : "text-zinc-400 hover:text-zinc-200"
+                  }`}
+                >
+                  {opt.label}
+                </button>
+              );
+            })}
           </div>
         </div>
       </PopoverContent>

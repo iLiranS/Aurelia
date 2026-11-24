@@ -4,6 +4,7 @@ import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import { OrthographicCamera } from "@react-three/drei";
 import { FallingNotes } from "./FallingNotes";
 import { MeasureLines } from "./MeasureLines";
+import { CountInOverlay } from "./CountInOverlay";
 import { ListPreviewDriver } from "./ListPreviewDriver";
 import { PianoKeyboard } from "./PianoKeyboard";
 import { HitEffects } from "./HitEffects";
@@ -632,6 +633,9 @@ export const PianoStage: React.FC = () => {
           </div>
         </>
       )}
+
+      {/* Centered Count-In Beat Overlay */}
+      <CountInOverlay />
 
       {/* Interactive Piano Pointer Overlay (Bottom 18% hit-testing) */}
       <PianoPointerOverlay />

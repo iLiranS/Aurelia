@@ -33,6 +33,7 @@ pub enum AudioCommand {
         enabled: bool,
         start_sec: Option<f64>,
         end_sec: Option<f64>,
+        pause_on_wrap: bool,
     },
     SetHandFilters {
         right_enabled: bool,
@@ -144,6 +145,12 @@ pub struct StudyWaitPayload {
     pub song_time_sec: f64,
 }
 
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LoopWrappedPayload {
+    pub loop_start_sec: f64,
+}
+
 #[derive(Clone, Copy)]
 struct StudyWaitSnapshot {
     is_waiting: bool,
@@ -193,6 +200,8 @@ pub fn start_audio_engine(
     let is_playing = Arc::new(AtomicBool::new(false));
     let tempo_scale_bits = Arc::new(AtomicU64::new(1.0f64.to_bits()));
     let sample_rate_atomic = Arc::new(AtomicU32::new(44100));
+    let loop_wrap_version_atomic = Arc::new(AtomicU64::new(0));
+    let loop_wrap_start_bits = Arc::new(AtomicU64::new(0));
 
     let handle = AudioEngineHandle {
         cmd_tx,
@@ -203,6 +212,8 @@ pub fn start_audio_engine(
     };
 
     let sample_rate_thread = sample_rate_atomic.clone();
+    let loop_wrap_version_audio = loop_wrap_version_atomic.clone();
+    let loop_wrap_start_audio = loop_wrap_start_bits.clone();
     // Dedicated thread owning the cpal::Stream (which is !Send on macOS)
     thread::spawn(move || {
         run_audio_thread(
@@ -212,6 +223,8 @@ pub fn start_audio_engine(
             is_playing,
             tempo_scale_bits,
             sample_rate_thread,
+            loop_wrap_version_audio,
+            loop_wrap_start_audio,
             soundfont_candidates,
         );
     });
@@ -222,9 +235,20 @@ pub fn start_audio_engine(
     thread::spawn(move || {
         let mut last_was_playing = false;
         let mut last_emitted_time = 0.0f64;
+        let mut last_emitted_wrap_ver = 0u64;
 
         loop {
             thread::sleep(Duration::from_millis(33)); // ~30Hz
+
+            let cur_wrap_ver = loop_wrap_version_atomic.load(Ordering::Acquire);
+            if cur_wrap_ver != last_emitted_wrap_ver {
+                last_emitted_wrap_ver = cur_wrap_ver;
+                let loop_start_sec = f64::from_bits(loop_wrap_start_bits.load(Ordering::Relaxed));
+                let _ = app_handle_clone.emit(
+                    "playback:loop-wrapped",
+                    LoopWrappedPayload { loop_start_sec },
+                );
+            }
 
             let mut latest_wait: Option<StudyWaitSnapshot> = None;
             while let Ok(snap) = wait_rx.try_recv() {
@@ -305,6 +329,8 @@ fn run_audio_thread(
     is_playing_atomic: Arc<AtomicBool>,
     tempo_scale_bits: Arc<AtomicU64>,
     sample_rate_atomic: Arc<AtomicU32>,
+    loop_wrap_version_atomic: Arc<AtomicU64>,
+    loop_wrap_start_bits: Arc<AtomicU64>,
     soundfont_candidates: Vec<PathBuf>,
 ) {
     let host = cpal::default_host();
@@ -370,6 +396,7 @@ fn run_audio_thread(
             let mut is_preview_mode = false;
             let mut preview_end_sec = 0.0f64;
             let mut last_wait_version = 0u64;
+            let mut last_loop_wrap_version = 0u64;
 
             device.build_output_stream(
                 &config,
@@ -381,6 +408,9 @@ fn run_audio_thread(
                         &cmd_rx,
                         &wait_tx,
                         &mut last_wait_version,
+                        &mut last_loop_wrap_version,
+                        &loop_wrap_version_atomic,
+                        &loop_wrap_start_bits,
                         &mut sequencer,
                         &mut backend,
                         &drop_tx,
@@ -433,6 +463,9 @@ fn process_audio_block(
     cmd_rx: &Receiver<AudioCommand>,
     wait_tx: &crossbeam_channel::Sender<StudyWaitSnapshot>,
     last_wait_version: &mut u64,
+    last_loop_wrap_version: &mut u64,
+    loop_wrap_version_atomic: &Arc<AtomicU64>,
+    loop_wrap_start_bits: &Arc<AtomicU64>,
     sequencer: &mut Sequencer,
     backend: &mut Box<dyn AudioBackend>,
     drop_tx: &Sender<Box<dyn AudioBackend>>,
@@ -482,10 +515,12 @@ fn process_audio_block(
                 enabled,
                 start_sec,
                 end_sec,
+                pause_on_wrap,
             } => {
                 sequencer.loop_enabled = enabled;
                 sequencer.loop_start_sec = start_sec;
                 sequencer.loop_end_sec = end_sec;
+                sequencer.loop_pause_on_wrap = pause_on_wrap;
             }
             AudioCommand::SetHandFilters {
                 right_enabled,
@@ -593,6 +628,12 @@ fn process_audio_block(
             is_waiting: sequencer.is_waiting,
             waiting_keys_hand: sequencer.waiting_keys_hand,
         });
+    }
+
+    if !*is_preview_mode && sequencer.loop_wrap_version != *last_loop_wrap_version {
+        *last_loop_wrap_version = sequencer.loop_wrap_version;
+        loop_wrap_start_bits.store(sequencer.song_time_sec.to_bits(), Ordering::Relaxed);
+        loop_wrap_version_atomic.store(sequencer.loop_wrap_version, Ordering::Release);
     }
 
     // 3. Process studio DSP chain (warmth shelf EQ, stereo reverb, makeup gain, soft limiter)

@@ -36,6 +36,8 @@ pub struct Sequencer {
     pub loop_enabled: bool,
     pub loop_start_sec: Option<f64>,
     pub loop_end_sec: Option<f64>,
+    pub loop_pause_on_wrap: bool,
+    pub loop_wrap_version: u64,
     pub transpose_semitones: i8,
     pub study_mode: bool,
     pub preview_bypass_study: bool,
@@ -70,6 +72,8 @@ impl Sequencer {
             loop_enabled: false,
             loop_start_sec: None,
             loop_end_sec: None,
+            loop_pause_on_wrap: false,
+            loop_wrap_version: 0,
             transpose_semitones: 0,
             study_mode: false,
             preview_bypass_study: false,
@@ -380,8 +384,11 @@ impl Sequencer {
             let loop_start = self.loop_start_sec.unwrap_or(0.0);
             if next_time >= loop_end && loop_end > loop_start {
                 backend.all_notes_off();
-                self.song_time_sec = loop_start;
                 self.seek(loop_start);
+                if self.loop_pause_on_wrap {
+                    self.is_playing = false;
+                    self.loop_wrap_version += 1;
+                }
                 backend.render(left, right);
                 self.apply_volume(left, right);
                 return;

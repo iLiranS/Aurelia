@@ -38,7 +38,7 @@ import { SongPreviewCard } from "@/components/home/SongPreviewCard";
 import { SongListRow } from "@/components/home/SongListRow";
 import { useViewStore } from "@/stores/useViewStore";
 import { useLibraryStore } from "@/stores/useLibraryStore";
-import { usePlaybackStore } from "@/stores/usePlaybackStore";
+import { usePlaybackStore, cancelCountIn } from "@/stores/usePlaybackStore";
 import { isMac } from "@/types/shortcuts";
 import { playbackClock } from "@/engine/playbackClock";
 import {
@@ -148,6 +148,7 @@ export const HomeExplorer: React.FC = () => {
     try {
       setIsLoadingSong(true);
       const [parsed, settings] = await loadSong(song.filePath);
+      cancelCountIn();
       touchLastPlayed(song.contentHash);
       setActiveSong(parsed, settings);
       await audioLoadSong(song.filePath, settings);

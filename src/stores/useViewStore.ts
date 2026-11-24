@@ -3,7 +3,7 @@ import { activeNotes } from "@/engine/activeNotes";
 import { freeplayNotes } from "@/engine/freeplayNotes";
 import { listPreviewManager } from "@/engine/listPreviewDriver";
 import { playbackClock } from "@/engine/playbackClock";
-import { usePlaybackStore } from "@/stores/usePlaybackStore";
+import { usePlaybackStore, cancelCountIn } from "@/stores/usePlaybackStore";
 import { audioPause, audioStopPreview } from "@/services/tauriApi";
 
 export type ViewMode = "home" | "song" | "freeplay";
@@ -39,6 +39,7 @@ export const useViewStore = create<ViewState>((set) => ({
     audioStopPreview().catch(() => {});
 
     if (viewMode !== "song") {
+      cancelCountIn();
       const playback = usePlaybackStore.getState();
       if (playback.isPlaying) {
         playback.setIsPlaying(false);

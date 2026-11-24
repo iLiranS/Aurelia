@@ -107,11 +107,13 @@ pub fn audio_set_loop(
     enabled: bool,
     start_sec: Option<f64>,
     end_sec: Option<f64>,
+    pause_on_wrap: Option<bool>,
 ) -> Result<(), String> {
     engine.send(AudioCommand::SetLoop {
         enabled,
         start_sec,
         end_sec,
+        pause_on_wrap: pause_on_wrap.unwrap_or(false),
     })
 }
 

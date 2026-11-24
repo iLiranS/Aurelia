@@ -18,6 +18,7 @@ export function usePersistSongSettings(): void {
 
   const tempoScale = usePlaybackStore((s) => s.tempoScale);
   const transposeSemitones = usePlaybackStore((s) => s.transposeSemitones);
+  const countInBars = usePlaybackStore((s) => s.countInBars);
   const loopEnabled = usePlaybackStore((s) => s.loopEnabled);
   const loopStartSec = usePlaybackStore((s) => s.loopStartSec);
   const loopEndSec = usePlaybackStore((s) => s.loopEndSec);
@@ -70,7 +71,7 @@ export function usePersistSongSettings(): void {
 
     audioSetTempo(tempoScale);
     audioSetTranspose(transposeSemitones);
-    audioSetLoop(loopEnabled, loopStartSec, loopEndSec);
+    audioSetLoop(loopEnabled, loopStartSec, loopEndSec, countInBars > 0);
     audioSetHandFilters(
       rightAudioEnabled,
       leftAudioEnabled,
@@ -113,6 +114,7 @@ export function usePersistSongSettings(): void {
     activeSong,
     tempoScale,
     transposeSemitones,
+    countInBars,
     loopEnabled,
     loopStartSec,
     loopEndSec,

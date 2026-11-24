@@ -25,12 +25,15 @@ import {
 import { TimelineScrubber } from "@/components/hud/TimelineScrubber";
 import { HandControlsPopover } from "@/components/hud/HandControlsPopover";
 import { TempoPopover, LoopButton } from "@/components/hud/TempoLoopPopover";
-import { usePlaybackStore } from "@/stores/usePlaybackStore";
+import {
+  usePlaybackStore,
+  cancelCountIn,
+  startPlaybackWithOptionalCountIn,
+} from "@/stores/usePlaybackStore";
 import { useShortcutStore } from "@/stores/useShortcutStore";
 import { useSoundStore } from "@/stores/useSoundStore";
 import { playbackClock } from "@/engine/playbackClock";
 import {
-  audioPlay,
   audioPause,
   audioSeek,
   audioSetVolume,
@@ -46,6 +49,7 @@ function formatTime(sec: number): string {
 export const TransportDock: React.FC = () => {
   const isPlaying = usePlaybackStore((s) => s.isPlaying);
   const setIsPlaying = usePlaybackStore((s) => s.setIsPlaying);
+  const countInBeat = usePlaybackStore((s) => s.countInBeat);
   const durationSec = usePlaybackStore((s) => s.durationSec);
   const displayTimeSec = usePlaybackStore((s) => s.displayTimeSec);
   const setDisplayTimeSec = usePlaybackStore((s) => s.setDisplayTimeSec);
@@ -96,17 +100,22 @@ export const TransportDock: React.FC = () => {
   const playPauseShortcut = useShortcutStore((s) => s.getFormattedBinding("playback.toggle"));
 
   const handlePlayPause = async () => {
+    if (countInBeat !== null) {
+      cancelCountIn();
+      return;
+    }
     const next = !isPlaying;
-    setIsPlaying(next);
-    playbackClock.syncFromRust(displayTimeSec, next, tempoScale);
     if (next) {
-      await audioPlay();
+      await startPlaybackWithOptionalCountIn();
     } else {
+      setIsPlaying(false);
+      playbackClock.syncFromRust(displayTimeSec, false, tempoScale);
       await audioPause();
     }
   };
 
   const handleRestart = async () => {
+    cancelCountIn();
     setDisplayTimeSec(0);
     playbackClock.seekLocal(0);
     await audioSeek(0);
@@ -147,13 +156,13 @@ export const TransportDock: React.FC = () => {
               <button
                 onClick={handlePlayPause}
                 className={`w-7 h-7 rounded-full flex items-center justify-center transition-all cursor-pointer shadow-sm shrink-0 ${
-                  isPlaying
+                  isPlaying || countInBeat !== null
                     ? "liquid-glass-accent text-primary"
                     : "liquid-glass-btn text-zinc-100 hover:text-white"
                 }`}
-                aria-label={isPlaying ? "Pause" : "Play"}
+                aria-label={isPlaying || countInBeat !== null ? "Pause" : "Play"}
               >
-                {isPlaying ? (
+                {isPlaying || countInBeat !== null ? (
                   <Pause className="w-3 h-3 fill-current text-current" />
                 ) : (
                   <Play className="w-3 h-3 fill-current text-current ml-0.5" />
@@ -162,7 +171,7 @@ export const TransportDock: React.FC = () => {
             </TooltipTrigger>
             <TooltipContent side="bottom">
               <span>
-                {isPlaying
+                {isPlaying || countInBeat !== null
                   ? `Pause (${playPauseShortcut})`
                   : `Play (${playPauseShortcut})`}
               </span>

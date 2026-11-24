@@ -1,12 +1,16 @@
 import { useEffect } from "react";
 import { eventToBinding, type ShortcutActionId } from "@/types/shortcuts";
 import { useShortcutStore } from "@/stores/useShortcutStore";
-import { usePlaybackStore } from "@/stores/usePlaybackStore";
+import {
+  usePlaybackStore,
+  cancelCountIn,
+  startPlaybackWithOptionalCountIn,
+} from "@/stores/usePlaybackStore";
 import { useRecordingStore } from "@/stores/useRecordingStore";
 import { useThemeStore } from "@/stores/useThemeStore";
 import { useMidiStore } from "@/stores/useMidiStore";
 import { playbackClock } from "@/engine/playbackClock";
-import { audioPlay, audioPause, audioSeek, audioSetVolume, audioStopPreview } from "@/services/tauriApi";
+import { audioPause, audioSeek, audioSetVolume, audioStopPreview } from "@/services/tauriApi";
 import { useViewStore } from "@/stores/useViewStore";
 import { showVolumeToast } from "@/components/ui/toast";
 
@@ -188,22 +192,27 @@ export function useGlobalShortcuts(): void {
 
       switch (matchedAction) {
         case "playback.toggle": {
+          if (playback.countInBeat !== null) {
+            cancelCountIn();
+            break;
+          }
           const next = !playback.isPlaying;
-          playback.setIsPlaying(next);
-          playbackClock.syncFromRust(
-            playback.displayTimeSec,
-            next,
-            playback.tempoScale
-          );
           if (next) {
-            await audioPlay();
+            await startPlaybackWithOptionalCountIn();
           } else {
+            playback.setIsPlaying(false);
+            playbackClock.syncFromRust(
+              playback.displayTimeSec,
+              false,
+              playback.tempoScale
+            );
             await audioPause();
           }
           break;
         }
 
         case "playback.restart": {
+          cancelCountIn();
           playback.setDisplayTimeSec(0);
           playbackClock.seekLocal(0);
           await audioSeek(0);

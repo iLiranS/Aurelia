@@ -12,7 +12,7 @@ import { usePersistSongSettings } from "@/hooks/usePersistSongSettings";
 import { useQwertyPiano } from "@/hooks/useQwertyPiano";
 import { useGlobalShortcuts } from "@/hooks/useGlobalShortcuts";
 import { useLibraryStore } from "@/stores/useLibraryStore";
-import { usePlaybackStore } from "@/stores/usePlaybackStore";
+import { usePlaybackStore, startPlaybackWithOptionalCountIn } from "@/stores/usePlaybackStore";
 import { useShortcutStore } from "@/stores/useShortcutStore";
 import { useViewStore } from "@/stores/useViewStore";
 import { playbackClock } from "@/engine/playbackClock";
@@ -109,6 +109,7 @@ export const App: React.FC = () => {
     let unlistenFolderFn: (() => void) | undefined;
     let unlistenClockFn: (() => void) | undefined;
     let unlistenStudyWaitFn: (() => void) | undefined;
+    let unlistenLoopWrappedFn: (() => void) | undefined;
     let unlistenSoundFontFn: (() => void) | undefined;
     let unlistenMidiLiveFn: (() => void) | undefined;
     let unlistenMidiDevicesFn: (() => void) | undefined;
@@ -170,6 +171,12 @@ export const App: React.FC = () => {
         const savedVolume = await getAppSetting("master_volume_v1");
         if (savedVolume !== null) {
           usePlaybackStore.getState().hydrateVolume(savedVolume);
+        }
+
+        // Hydrate saved count-in bars from SQLite
+        const savedCountIn = await getAppSetting("count_in_bars_v1");
+        if (savedCountIn !== null) {
+          usePlaybackStore.getState().hydrateCountInBars(savedCountIn);
         }
 
         // Hydrate active soundfont and discover available soundfonts
@@ -269,6 +276,22 @@ export const App: React.FC = () => {
           usePlaybackStore.getState().setIsWaitingForInput(isWaiting);
         });
         unlistenStudyWaitFn = unlistenStudyWait;
+
+        // Listen for A-B Loop wrap pause when Count-In is enabled
+        const unlistenLoopWrapped = await listen<{ loopStartSec: number }>(
+          "playback:loop-wrapped",
+          (event) => {
+            const { loopStartSec } = event.payload;
+            const pb = usePlaybackStore.getState();
+            pb.setIsPlaying(false);
+            pb.setDisplayTimeSec(loopStartSec);
+            playbackClock.seekLocal(loopStartSec);
+            if (pb.countInBars > 0 && useViewStore.getState().viewMode === "song") {
+              void startPlaybackWithOptionalCountIn(1);
+            }
+          }
+        );
+        unlistenLoopWrappedFn = unlistenLoopWrapped;
       } catch (err) {
         console.warn("Tauri initialization (running in browser?):", err);
       }
@@ -281,6 +304,7 @@ export const App: React.FC = () => {
       if (unlistenFolderFn) unlistenFolderFn();
       if (unlistenClockFn) unlistenClockFn();
       if (unlistenStudyWaitFn) unlistenStudyWaitFn();
+      if (unlistenLoopWrappedFn) unlistenLoopWrappedFn();
       if (unlistenSoundFontFn) unlistenSoundFontFn();
       if (unlistenMidiLiveFn) unlistenMidiLiveFn();
       if (unlistenMidiDevicesFn) unlistenMidiDevicesFn();
