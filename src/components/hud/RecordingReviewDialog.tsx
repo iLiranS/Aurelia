@@ -191,6 +191,7 @@ export const RecordingReviewDialog: React.FC = () => {
       pb.setDurationSec(parsed.durationSec);
       pb.setInitialBpm(parsed.initialBpm);
       pb.setTempoScale(settings.tempoScale);
+      pb.setTransposeSemitones(settings.transposeSemitones ?? 0);
       pb.setLoopEnabled(settings.loopEnabled);
       pb.setLoopPoints(settings.loopStartSec, settings.loopEndSec);
       pb.setSplitPointMidi(settings.splitPointMidi);

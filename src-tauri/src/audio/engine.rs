@@ -71,6 +71,7 @@ pub enum AudioCommand {
         min_midi: u8,
         max_midi: u8,
     },
+    SetTranspose(i8),
     SwapBackend(Box<dyn AudioBackend>),
 }
 
@@ -114,6 +115,7 @@ impl std::fmt::Debug for AudioCommand {
                 "AudioCommand::SetStudyRange({}, {}, {})",
                 skip_out_of_range, min_midi, max_midi
             ),
+            Self::SetTranspose(s) => write!(f, "AudioCommand::SetTranspose({})", s),
             Self::SwapBackend(_) => write!(f, "AudioCommand::SwapBackend"),
         }
     }
@@ -559,6 +561,11 @@ fn process_audio_block(
                 max_midi,
             } => {
                 sequencer.set_study_range(skip_out_of_range, min_midi, max_midi);
+            }
+            AudioCommand::SetTranspose(semitones) => {
+                backend.all_notes_off();
+                sequencer.transpose_semitones = semitones.clamp(-12, 12);
+                sequencer.clear_wait_state();
             }
             AudioCommand::SwapBackend(new_backend) => {
                 backend.all_notes_off();

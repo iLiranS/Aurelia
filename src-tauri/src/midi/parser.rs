@@ -94,6 +94,8 @@ pub struct SongSettings {
     pub loop_enabled: bool,
     pub loop_start_sec: Option<f64>,
     pub loop_end_sec: Option<f64>,
+    #[serde(default)]
+    pub transpose_semitones: i8,
 }
 
 impl Default for SongSettings {
@@ -107,6 +109,7 @@ impl Default for SongSettings {
             loop_enabled: false,
             loop_start_sec: None,
             loop_end_sec: None,
+            transpose_semitones: 0,
         }
     }
 }

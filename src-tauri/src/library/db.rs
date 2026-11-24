@@ -131,6 +131,7 @@ impl LibraryDb {
                 loop_enabled INTEGER NOT NULL DEFAULT 0,
                 loop_start_sec REAL,
                 loop_end_sec REAL,
+                transpose_semitones INTEGER NOT NULL DEFAULT 0,
                 FOREIGN KEY (content_hash) REFERENCES songs(content_hash) ON DELETE CASCADE
             );
 
@@ -139,6 +140,25 @@ impl LibraryDb {
             "#,
         )
         .map_err(|e| format!("Failed to initialize database tables: {}", e))?;
+
+        // Non-destructive migration for existing song_settings tables
+        let has_transpose_col = {
+            let mut stmt = conn
+                .prepare("PRAGMA table_info(song_settings)")
+                .map_err(|e| format!("Failed to inspect song_settings columns: {}", e))?;
+            let col_names = stmt
+                .query_map([], |row| row.get::<_, String>(1))
+                .map_err(|e| format!("Failed to read song_settings columns: {}", e))?;
+            let found = col_names.flatten().any(|name| name == "transpose_semitones");
+            found
+        };
+        if !has_transpose_col {
+            conn.execute(
+                "ALTER TABLE song_settings ADD COLUMN transpose_semitones INTEGER NOT NULL DEFAULT 0",
+                [],
+            )
+            .map_err(|e| format!("Failed to add transpose_semitones column: {}", e))?;
+        }
 
         if current_version < SCHEMA_VERSION {
             conn.pragma_update(None, "user_version", SCHEMA_VERSION)
@@ -584,7 +604,8 @@ impl LibraryDb {
         let mut stmt = conn
             .prepare(
                 "SELECT track_hands_json, split_point_midi, use_split_point,
-                        tempo_scale, loop_enabled, loop_start_sec, loop_end_sec
+                        tempo_scale, loop_enabled, loop_start_sec, loop_end_sec,
+                        transpose_semitones
                  FROM song_settings
                  WHERE content_hash = ?1",
             )
@@ -601,6 +622,7 @@ impl LibraryDb {
             let loop_enabled_int: i32 = row.get(4).map_err(|e| e.to_string())?;
             let loop_start_sec: Option<f64> = row.get(5).map_err(|e| e.to_string())?;
             let loop_end_sec: Option<f64> = row.get(6).map_err(|e| e.to_string())?;
+            let transpose_raw: i64 = row.get(7).unwrap_or(0);
 
             Ok(SongSettings {
                 content_hash: content_hash.to_string(),
@@ -611,6 +633,7 @@ impl LibraryDb {
                 loop_enabled: loop_enabled_int != 0,
                 loop_start_sec,
                 loop_end_sec,
+                transpose_semitones: transpose_raw.clamp(-12, 12) as i8,
             })
         } else {
             Ok(SongSettings {
@@ -642,8 +665,8 @@ impl LibraryDb {
         conn.execute(
             "INSERT INTO song_settings (
                 content_hash, track_hands_json, split_point_midi, use_split_point,
-                tempo_scale, loop_enabled, loop_start_sec, loop_end_sec
-            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
+                tempo_scale, loop_enabled, loop_start_sec, loop_end_sec, transpose_semitones
+            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
             ON CONFLICT(content_hash) DO UPDATE SET
                 track_hands_json = excluded.track_hands_json,
                 split_point_midi = excluded.split_point_midi,
@@ -651,7 +674,8 @@ impl LibraryDb {
                 tempo_scale = excluded.tempo_scale,
                 loop_enabled = excluded.loop_enabled,
                 loop_start_sec = excluded.loop_start_sec,
-                loop_end_sec = excluded.loop_end_sec",
+                loop_end_sec = excluded.loop_end_sec,
+                transpose_semitones = excluded.transpose_semitones",
             params![
                 settings.content_hash,
                 track_hands_json,
@@ -661,6 +685,7 @@ impl LibraryDb {
                 if settings.loop_enabled { 1 } else { 0 },
                 settings.loop_start_sec,
                 settings.loop_end_sec,
+                settings.transpose_semitones.clamp(-12, 12) as i64,
             ],
         )
         .map_err(|e| e.to_string())?;
@@ -763,5 +788,37 @@ mod tests {
                 .unwrap()
         };
         assert_eq!(settings_count, 0, "Should not insert orphan song_settings row");
+    }
+
+    #[test]
+    fn test_db_transpose_persistence() {
+        let db = LibraryDb::new_in_memory().expect("Failed to create in-memory db");
+        let summary = SongSummary {
+            content_hash: "transpose_hash".to_string(),
+            relative_path: "transpose.mid".to_string(),
+            file_path: "/music/transpose.mid".to_string(),
+            title: "Transpose Test".to_string(),
+            folder: "".to_string(),
+            duration_sec: 30.0,
+            initial_bpm: 120.0,
+            track_count: 1,
+            is_favorite: false,
+            last_played_at: None,
+            added_at: 1000,
+            peak_start_sec: 0.0,
+            preview_peak_json: "[]".to_string(),
+            preview_start_json: "[]".to_string(),
+        };
+        db.upsert_song(&summary, 100, 1000).unwrap();
+
+        let settings = SongSettings {
+            content_hash: "transpose_hash".to_string(),
+            transpose_semitones: -3,
+            ..Default::default()
+        };
+        db.save_song_settings(&settings).unwrap();
+
+        let loaded = db.get_song_settings("transpose_hash").unwrap();
+        assert_eq!(loaded.transpose_semitones, -3);
     }
 }

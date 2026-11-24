@@ -16,6 +16,7 @@ interface PlaybackState {
   durationSec: number;
   initialBpm: number;
   tempoScale: number;
+  transposeSemitones: number;
   volume: number;
   rightHandActive: boolean;
   leftHandActive: boolean;
@@ -34,6 +35,7 @@ interface PlaybackState {
   setDurationSec: (durationSec: number) => void;
   setInitialBpm: (bpm: number) => void;
   setTempoScale: (scale: number) => void;
+  setTransposeSemitones: (semitones: number) => void;
   setVolume: (volume: number) => void;
   hydrateVolume: (rawValue: string) => void;
   setRightHandActive: (active: boolean) => void;
@@ -60,6 +62,7 @@ export const usePlaybackStore = create<PlaybackState>((set) => ({
   durationSec: 0,
   initialBpm: 120,
   tempoScale: 1.0,
+  transposeSemitones: 0,
   volume: 0.85,
   rightHandActive: true,
   leftHandActive: true,
@@ -78,6 +81,8 @@ export const usePlaybackStore = create<PlaybackState>((set) => ({
   setDurationSec: (durationSec) => set({ durationSec }),
   setInitialBpm: (initialBpm) => set({ initialBpm }),
   setTempoScale: (tempoScale) => set({ tempoScale }),
+  setTransposeSemitones: (semitones) =>
+    set({ transposeSemitones: Math.max(-12, Math.min(12, Math.round(semitones))) }),
   setVolume: (volume) => {
     const clamped = Math.max(0, Math.min(1, volume));
     set({ volume: clamped });
@@ -118,5 +123,6 @@ export const usePlaybackStore = create<PlaybackState>((set) => ({
       loopEnabled: false,
       loopStartSec: null,
       loopEndSec: null,
+      transposeSemitones: 0,
     }),
 }));

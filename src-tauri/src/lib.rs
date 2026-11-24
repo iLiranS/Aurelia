@@ -111,6 +111,7 @@ pub fn run() {
             commands::playback::audio_live_all_notes_off,
             commands::playback::audio_set_study_mode,
             commands::playback::audio_set_study_range,
+            commands::playback::audio_set_transpose,
             commands::playback::audio_start_preview,
             commands::playback::audio_stop_preview,
             commands::playback::audio_set_sound_profile,

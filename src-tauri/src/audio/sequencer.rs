@@ -36,6 +36,7 @@ pub struct Sequencer {
     pub loop_enabled: bool,
     pub loop_start_sec: Option<f64>,
     pub loop_end_sec: Option<f64>,
+    pub transpose_semitones: i8,
     pub study_mode: bool,
     pub preview_bypass_study: bool,
     pub study_wait_right: bool,
@@ -69,6 +70,7 @@ impl Sequencer {
             loop_enabled: false,
             loop_start_sec: None,
             loop_end_sec: None,
+            transpose_semitones: 0,
             study_mode: false,
             preview_bypass_study: false,
             study_wait_right: true,
@@ -97,6 +99,7 @@ impl Sequencer {
         self.loop_enabled = settings.loop_enabled;
         self.loop_start_sec = settings.loop_start_sec;
         self.loop_end_sec = settings.loop_end_sec;
+        self.transpose_semitones = settings.transpose_semitones.clamp(-12, 12);
         self.preview_bypass_study = false;
         self.clear_wait_state();
     }
@@ -192,6 +195,16 @@ impl Sequencer {
         }
     }
 
+    #[inline]
+    pub fn apply_transpose(&self, key: u8) -> Option<u8> {
+        let shifted = key as i16 + self.transpose_semitones as i16;
+        if (21..=108).contains(&shifted) {
+            Some(shifted as u8)
+        } else {
+            None
+        }
+    }
+
     pub fn is_required_in_study(&self, key: u8, track_index: u32, default_hand: u8) -> Option<u8> {
         if !self.study_mode || self.preview_bypass_study {
             return None;
@@ -263,11 +276,15 @@ impl Sequencer {
             let ev = &self.events[self.cursor];
             match ev.kind {
                 SeqEventKind::NoteOn {
-                    key,
+                    key: raw_key,
                     velocity,
                     track_index,
                     hand,
                 } => {
+                    let Some(key) = self.apply_transpose(raw_key) else {
+                        self.cursor += 1;
+                        continue;
+                    };
                     if let Some(_req_hand) = self.is_required_in_study(key, track_index, hand) {
                         let k_idx = key as usize;
                         if k_idx < 128
@@ -289,33 +306,37 @@ impl Sequencer {
                             let g_ev = &self.events[self.cursor];
                             match g_ev.kind {
                                 SeqEventKind::NoteOn {
-                                    key: gk,
+                                    key: raw_gk,
                                     velocity: gvel,
                                     track_index: gtrack,
                                     hand: ghand,
                                 } => {
-                                    if let Some(g_req_hand) =
-                                        self.is_required_in_study(gk, gtrack, ghand)
-                                    {
-                                        let gk_idx = gk as usize;
-                                        if gk_idx < 128
-                                            && self.recent_live_hits[gk_idx] >= 0.0
-                                            && (g_ev.time_sec - self.recent_live_hits[gk_idx])
-                                                .abs()
-                                                <= EARLY_HIT_WINDOW_SEC
+                                    if let Some(gk) = self.apply_transpose(raw_gk) {
+                                        if let Some(g_req_hand) =
+                                            self.is_required_in_study(gk, gtrack, ghand)
                                         {
-                                            self.recent_live_hits[gk_idx] = -1.0;
-                                        } else if gk_idx < 128 {
-                                            self.waiting_keys[gk_idx] = true;
-                                            self.waiting_keys_hand[gk_idx] = g_req_hand;
+                                            let gk_idx = gk as usize;
+                                            if gk_idx < 128
+                                                && self.recent_live_hits[gk_idx] >= 0.0
+                                                && (g_ev.time_sec - self.recent_live_hits[gk_idx])
+                                                    .abs()
+                                                    <= EARLY_HIT_WINDOW_SEC
+                                            {
+                                                self.recent_live_hits[gk_idx] = -1.0;
+                                            } else if gk_idx < 128 {
+                                                self.waiting_keys[gk_idx] = true;
+                                                self.waiting_keys_hand[gk_idx] = g_req_hand;
+                                            }
+                                        } else if self.is_note_audible(gk, gtrack, ghand) {
+                                            let shaped_vel = shape_velocity(gvel, self.touch);
+                                            backend.note_on(0, gk as i32, shaped_vel as i32);
                                         }
-                                    } else if self.is_note_audible(gk, gtrack, ghand) {
-                                        let shaped_vel = shape_velocity(gvel, self.touch);
-                                        backend.note_on(0, gk as i32, shaped_vel as i32);
                                     }
                                 }
-                                SeqEventKind::NoteOff { key: gk, .. } => {
-                                    backend.note_off(0, gk as i32);
+                                SeqEventKind::NoteOff { key: raw_gk, .. } => {
+                                    if let Some(gk) = self.apply_transpose(raw_gk) {
+                                        backend.note_off(0, gk as i32);
+                                    }
                                 }
                                 SeqEventKind::Sustain { value } => {
                                     backend.control_change(0, 64, value as i32);
@@ -340,9 +361,11 @@ impl Sequencer {
                         backend.note_on(0, key as i32, shaped_vel as i32);
                     }
                 }
-                SeqEventKind::NoteOff { key, .. } => {
+                SeqEventKind::NoteOff { key: raw_key, .. } => {
                     // Always forward note-off to prevent hung notes
-                    backend.note_off(0, key as i32);
+                    if let Some(key) = self.apply_transpose(raw_key) {
+                        backend.note_off(0, key as i32);
+                    }
                 }
                 SeqEventKind::Sustain { value } => {
                     backend.control_change(0, 64, value as i32);
@@ -880,5 +903,53 @@ mod tests {
         seq.set_study_range(true, 53, 84);
         assert!(!seq.is_waiting);
         assert!(!seq.waiting_keys[48]);
+    }
+
+    #[test]
+    fn test_sequencer_transpose_audio_and_study_mode() {
+        let mut seq = Sequencer::new();
+        seq.events = vec![
+            SeqEvent {
+                time_sec: 0.1,
+                kind: SeqEventKind::NoteOn {
+                    key: 108, // 108 + 2 = 110 -> out of 21..=108, must be skipped cleanly
+                    velocity: 90,
+                    track_index: 0,
+                    hand: 0,
+                },
+            },
+            SeqEvent {
+                time_sec: 0.2,
+                kind: SeqEventKind::NoteOn {
+                    key: 60, // 60 + 2 = 62
+                    velocity: 100,
+                    track_index: 0,
+                    hand: 0,
+                },
+            },
+        ];
+        seq.duration_sec = 5.0;
+        seq.is_playing = true;
+        seq.transpose_semitones = 2;
+
+        // First verify audio playback without Study Mode plays key 62 and skips 108
+        let mut left = vec![0.0f32; 300];
+        let mut right = vec![0.0f32; 300];
+        let mut mock = MockBackend::new();
+        seq.render_block(&mut mock, &mut left, &mut right, 1000.0);
+        assert_eq!(mock.notes_on.len(), 1);
+        assert_eq!(mock.notes_on[0].1, 62);
+
+        // Now verify Study Mode waits on transposed key 62
+        seq.seek(0.0);
+        seq.set_study_mode(true, true, true);
+        mock.notes_on.clear();
+        seq.render_block(&mut mock, &mut left, &mut right, 1000.0);
+        assert!(seq.is_waiting);
+        assert!(seq.waiting_keys[62]);
+        assert!(!seq.waiting_keys[60]);
+
+        seq.on_live_note_on(62);
+        assert!(!seq.is_waiting);
     }
 }

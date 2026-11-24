@@ -7,6 +7,7 @@ import {
   audioSetLoop,
   audioSetHandFilters,
   audioSetStudyMode,
+  audioSetTranspose,
 } from "@/services/tauriApi";
 import { activeNotes } from "@/engine/activeNotes";
 import { playbackClock } from "@/engine/playbackClock";
@@ -16,6 +17,7 @@ export function usePersistSongSettings(): void {
   const activeSong = useLibraryStore((s) => s.activeSong);
 
   const tempoScale = usePlaybackStore((s) => s.tempoScale);
+  const transposeSemitones = usePlaybackStore((s) => s.transposeSemitones);
   const loopEnabled = usePlaybackStore((s) => s.loopEnabled);
   const loopStartSec = usePlaybackStore((s) => s.loopStartSec);
   const loopEndSec = usePlaybackStore((s) => s.loopEndSec);
@@ -67,6 +69,7 @@ export function usePersistSongSettings(): void {
     const leftAudioEnabled = muteInactiveHandAudio ? leftHandActive : true;
 
     audioSetTempo(tempoScale);
+    audioSetTranspose(transposeSemitones);
     audioSetLoop(loopEnabled, loopStartSec, loopEndSec);
     audioSetHandFilters(
       rightAudioEnabled,
@@ -93,6 +96,7 @@ export function usePersistSongSettings(): void {
           loopEnabled,
           loopStartSec,
           loopEndSec,
+          transposeSemitones,
         };
         await saveSongSettings(settings);
       } catch (err) {
@@ -108,6 +112,7 @@ export function usePersistSongSettings(): void {
   }, [
     activeSong,
     tempoScale,
+    transposeSemitones,
     loopEnabled,
     loopStartSec,
     loopEndSec,

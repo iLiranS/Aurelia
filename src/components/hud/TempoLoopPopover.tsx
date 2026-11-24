@@ -1,7 +1,8 @@
 import React from "react";
-import { Gauge, Repeat, X } from "lucide-react";
+import { Gauge, Minus, Plus, Repeat, RotateCcw, X } from "lucide-react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { Separator } from "@/components/ui/separator";
 import { Slider } from "@/components/ui/slider";
 import { usePlaybackStore } from "@/stores/usePlaybackStore";
 import { useShortcutStore } from "@/stores/useShortcutStore";
@@ -19,6 +20,8 @@ export const TempoPopover: React.FC = () => {
   const initialBpm = usePlaybackStore((s) => s.initialBpm);
   const tempoScale = usePlaybackStore((s) => s.tempoScale);
   const setTempoScale = usePlaybackStore((s) => s.setTempoScale);
+  const transposeSemitones = usePlaybackStore((s) => s.transposeSemitones);
+  const setTransposeSemitones = usePlaybackStore((s) => s.setTransposeSemitones);
   const displayTimeSec = usePlaybackStore((s) => s.displayTimeSec);
   const isPlaying = usePlaybackStore((s) => s.isPlaying);
 
@@ -28,6 +31,10 @@ export const TempoPopover: React.FC = () => {
   };
 
   const effectiveBpm = Math.round(initialBpm * tempoScale);
+  const transposeLabel =
+    transposeSemitones > 0
+      ? `+${transposeSemitones} st`
+      : `${transposeSemitones} st`;
 
   const tempoDownShortcut = useShortcutStore((s) => s.getFormattedBinding("tempo.down"));
   const tempoUpShortcut = useShortcutStore((s) => s.getFormattedBinding("tempo.up"));
@@ -38,18 +45,24 @@ export const TempoPopover: React.FC = () => {
         <TooltipTrigger asChild>
           <PopoverTrigger asChild>
             <button
-              className="h-6 px-1.5 w-[52px] text-[10px] font-medium tabular-nums text-zinc-300 hover:text-zinc-100 liquid-glass-btn rounded-lg flex items-center justify-center gap-1 transition-all cursor-pointer shadow-sm shrink-0"
-              aria-label="Adjust Tempo"
+              className="relative h-6 px-1.5 w-[52px] text-[10px] font-medium tabular-nums text-zinc-300 hover:text-zinc-100 liquid-glass-btn rounded-lg flex items-center justify-center gap-1 transition-all cursor-pointer shadow-sm shrink-0"
+              aria-label="Adjust Tempo and Transpose"
             >
               <Gauge className="w-3 h-3 text-zinc-400 shrink-0" />
               <span className=" text-right font-mono tabular-nums shrink-0">
                 {Math.round(tempoScale * 100)}%
               </span>
+              {transposeSemitones !== 0 && (
+                <span className="w-1.5 h-1.5 rounded-full bg-primary absolute top-0.5 right-0.5" />
+              )}
             </button>
           </PopoverTrigger>
         </TooltipTrigger>
         <TooltipContent side="bottom">
-          <span>Tempo ({effectiveBpm} BPM)</span>
+          <span>
+            Tempo ({effectiveBpm} BPM)
+            {transposeSemitones !== 0 ? ` · ${transposeLabel}` : ""}
+          </span>
         </TooltipContent>
       </Tooltip>
 
@@ -97,6 +110,45 @@ export const TempoPopover: React.FC = () => {
           Shortcut: <kbd className="text-zinc-400">{tempoDownShortcut}</kbd> /{" "}
           <kbd className="text-zinc-400">{tempoUpShortcut}</kbd> (±5%)
         </p>
+
+        <Separator className="bg-white/10" />
+
+        <div className="flex items-center justify-between gap-2">
+          <span className="text-xs font-semibold text-zinc-200">Transpose</span>
+          <div className="flex items-center gap-1">
+            <button
+              onClick={() => setTransposeSemitones(transposeSemitones - 1)}
+              disabled={transposeSemitones <= -12}
+              className="w-6 h-6 rounded-lg liquid-glass-btn flex items-center justify-center text-zinc-300 hover:text-white disabled:opacity-35 disabled:cursor-not-allowed cursor-pointer"
+              title="Transpose down 1 semitone"
+              aria-label="Transpose down 1 semitone"
+            >
+              <Minus className="w-3 h-3" />
+            </button>
+            <button
+              onClick={() => setTransposeSemitones(0)}
+              disabled={transposeSemitones === 0}
+              className={`min-w-[46px] h-6 px-1.5 rounded-lg text-[11px] font-mono font-semibold tabular-nums flex items-center justify-center gap-1 transition-colors ${
+                transposeSemitones !== 0
+                  ? "liquid-glass-accent text-primary cursor-pointer"
+                  : "liquid-glass-segment text-zinc-400 cursor-default"
+              }`}
+              title={transposeSemitones !== 0 ? "Reset transpose to 0 st" : undefined}
+            >
+              <span>{transposeLabel}</span>
+              {transposeSemitones !== 0 && <RotateCcw className="w-2.5 h-2.5 opacity-80" />}
+            </button>
+            <button
+              onClick={() => setTransposeSemitones(transposeSemitones + 1)}
+              disabled={transposeSemitones >= 12}
+              className="w-6 h-6 rounded-lg liquid-glass-btn flex items-center justify-center text-zinc-300 hover:text-white disabled:opacity-35 disabled:cursor-not-allowed cursor-pointer"
+              title="Transpose up 1 semitone"
+              aria-label="Transpose up 1 semitone"
+            >
+              <Plus className="w-3 h-3" />
+            </button>
+          </div>
+        </div>
       </PopoverContent>
     </Popover>
   );

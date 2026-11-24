@@ -69,6 +69,7 @@ export interface SongSettings {
   loopEnabled: boolean;
   loopStartSec: number | null;
   loopEndSec: number | null;
+  transposeSemitones?: number;
 }
 
 export type TouchPreset = 'soft' | 'balanced' | 'strong';

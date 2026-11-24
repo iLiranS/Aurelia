@@ -215,6 +215,7 @@ export const FallingNotes: React.FC = () => {
       trackHands,
       splitPointMidi,
       useSplitPoint,
+      transposeSemitones,
     } = usePlaybackStore.getState();
 
     if (!activeSong || activeSong.notes.length === 0) {
@@ -242,11 +243,17 @@ export const FallingNotes: React.FC = () => {
         continue; // Finished playing
       }
 
+      const shiftedMidi = note.midi + transposeSemitones;
+      if (shiftedMidi < 21 || shiftedMidi > 108) {
+        continue;
+      }
+
       const hand = resolveNoteHand(
         note,
         trackHands,
         splitPointMidi,
-        useSplitPoint
+        useSplitPoint,
+        shiftedMidi
       );
       if (hand === "none") {
         continue;
@@ -258,7 +265,7 @@ export const FallingNotes: React.FC = () => {
 
       // Active key hit registration (when note is striking the hit line right now)
       if (note.startSec <= now && noteEndSec >= now && isHandActive) {
-        const keyIdx = note.midi - 21;
+        const keyIdx = shiftedMidi - 21;
         if (keyIdx >= 0 && keyIdx < 88) {
           activeNotes.songHand[keyIdx] = hand === "right" ? 1 : 2;
           const vel = note.velocity / 127;
@@ -282,7 +289,7 @@ export const FallingNotes: React.FC = () => {
       const isStrikingHitLine = note.startSec <= now && noteEndSec >= now;
       count = pushNoteInstance(
         count,
-        note.midi,
+        shiftedMidi,
         visibleBottom,
         visibleTop,
         hand === "right" ? 1 : 2,

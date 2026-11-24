@@ -158,6 +158,11 @@ export async function audioSetStudyRange(
   await invoke("audio_set_study_range", { skipOutOfRange, minMidi, maxMidi });
 }
 
+export async function audioSetTranspose(semitones: number): Promise<void> {
+  if (!isTauri) return;
+  await invoke("audio_set_transpose", { semitones });
+}
+
 export async function audioStartPreview(
   filePath: string,
   startSec: number,

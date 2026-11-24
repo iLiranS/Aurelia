@@ -155,6 +155,7 @@ export const HomeExplorer: React.FC = () => {
       setDurationSec(parsed.durationSec);
       setInitialBpm(parsed.initialBpm);
       setTempoScale(settings.tempoScale);
+      usePlaybackStore.getState().setTransposeSemitones(settings.transposeSemitones ?? 0);
       setLoopEnabled(settings.loopEnabled);
       setLoopPoints(settings.loopStartSec, settings.loopEndSec);
       setSplitPointMidi(settings.splitPointMidi);

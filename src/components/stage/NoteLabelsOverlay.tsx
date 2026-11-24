@@ -135,6 +135,7 @@ const NoteLabelsCanvas: React.FC = () => {
         trackHands,
         splitPointMidi,
         useSplitPoint,
+        transposeSemitones,
       } = usePlaybackStore.getState();
 
       const notes = activeSong.notes;
@@ -151,11 +152,17 @@ const NoteLabelsCanvas: React.FC = () => {
           continue;
         }
 
+        const shiftedMidi = note.midi + transposeSemitones;
+        if (shiftedMidi < 21 || shiftedMidi > 108) {
+          continue;
+        }
+
         const hand = resolveNoteHand(
           note,
           trackHands,
           splitPointMidi,
-          useSplitPoint
+          useSplitPoint,
+          shiftedMidi
         );
         if (hand === "none") {
           continue;
@@ -173,7 +180,7 @@ const NoteLabelsCanvas: React.FC = () => {
           (hand === "right" && rightHandActive) ||
           (hand === "left" && leftHandActive);
 
-        drawNoteLabel(note.midi, visibleBottom, visibleTop, isHandActive);
+        drawNoteLabel(shiftedMidi, visibleBottom, visibleTop, isHandActive);
       }
     };
 

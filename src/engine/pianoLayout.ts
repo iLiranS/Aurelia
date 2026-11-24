@@ -190,10 +190,11 @@ export function resolveNoteHand(
   note: MidiNote,
   trackHands: Record<number, HandRole>,
   splitPointMidi: number,
-  useSplitPoint: boolean
+  useSplitPoint: boolean,
+  effectiveMidi: number = note.midi
 ): "right" | "left" | "none" {
   if (useSplitPoint) {
-    return note.midi >= splitPointMidi ? "right" : "left";
+    return effectiveMidi >= splitPointMidi ? "right" : "left";
   }
 
   const assigned = trackHands[note.trackIndex];
@@ -201,7 +202,7 @@ export function resolveNoteHand(
   if (assigned === "left") return "left";
   if (assigned === "none") return "none";
   if (assigned === "both") {
-    return note.midi >= splitPointMidi ? "right" : "left";
+    return effectiveMidi >= splitPointMidi ? "right" : "left";
   }
 
   return note.defaultHand === "left" ? "left" : "right";

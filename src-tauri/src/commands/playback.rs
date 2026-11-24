@@ -186,6 +186,14 @@ pub fn audio_set_study_range(
 }
 
 #[tauri::command]
+pub fn audio_set_transpose(
+    engine: State<'_, AudioEngineHandle>,
+    semitones: i8,
+) -> Result<(), String> {
+    engine.send(AudioCommand::SetTranspose(semitones))
+}
+
+#[tauri::command]
 pub fn audio_start_preview(
     engine: State<'_, AudioEngineHandle>,
     file_path: String,
