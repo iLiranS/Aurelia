@@ -3,6 +3,7 @@ name = "aurelia"
 version = "0.1.0"
 description = "A fast, native-feeling desktop MIDI piano visualizer and practice app"
 authors = ["Aurelia Team"]
+license = "GPL-3.0-only"
 edition = "2021"
 
 [lib]

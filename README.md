@@ -79,4 +79,6 @@ npm run tauri build
 
 ## 📄 License & Attributions
 
+Licensed under the [GNU General Public License v3.0](./LICENSE).
+
 See [THIRD-PARTY-NOTICES.md](./THIRD-PARTY-NOTICES.md) for open-source library and SoundFont attributions.
