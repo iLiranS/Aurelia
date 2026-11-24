@@ -60,8 +60,8 @@ export const AppearancePopover: React.FC = () => {
   const setRightHandColor = useThemeStore((s) => s.setRightHandColor);
   const setLeftHandColor = useThemeStore((s) => s.setLeftHandColor);
 
-  const bloomEnabled = useThemeStore((s) => s.bloomEnabled);
-  const setBloomEnabled = useThemeStore((s) => s.setBloomEnabled);
+  const noteGlowEnabled = useThemeStore((s) => s.noteGlowEnabled);
+  const setNoteGlowEnabled = useThemeStore((s) => s.setNoteGlowEnabled);
   const vfxPreset = useThemeStore((s) => s.vfxPreset);
   const setVfxPreset = useThemeStore((s) => s.setVfxPreset);
   const keyboardVignette = useThemeStore((s) => s.keyboardVignette);
@@ -242,11 +242,11 @@ export const AppearancePopover: React.FC = () => {
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-1.5 text-xs text-zinc-200">
                   <Sun className="w-3.5 h-3.5 text-amber-400" />
-                  <span>Bloom Glow</span>
+                  <span>Note Glow</span>
                 </div>
                 <Switch
-                  checked={bloomEnabled}
-                  onCheckedChange={setBloomEnabled}
+                  checked={noteGlowEnabled}
+                  onCheckedChange={setNoteGlowEnabled}
                 />
               </div>
 
@@ -257,7 +257,7 @@ export const AppearancePopover: React.FC = () => {
                 </div>
                 <div className="flex items-center p-0.5 rounded-lg bg-black/40 border border-white/[0.08]">
                   {(
-                    ["embers", "sparks", "mist", "off"] as readonly VfxPreset[]
+                    ["embers", "sparks", "smoke", "off"] as readonly VfxPreset[]
                   ).map((preset) => (
                     <button
                       key={preset}

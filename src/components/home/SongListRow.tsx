@@ -251,7 +251,7 @@ export const SongListRow: React.FC<SongListRowProps> = ({
           >
             {song.title}
           </h4>
-          <span className="text-[10px] text-zinc-500 truncate block">
+          <span className="text-[10px] text-zinc-400 truncate block">
             {folderName}
           </span>
         </div>
@@ -259,12 +259,12 @@ export const SongListRow: React.FC<SongListRowProps> = ({
 
       {/* Right: Metadata pills and duration */}
       <div className="flex items-center gap-4 text-xs font-mono tabular-nums text-zinc-400 shrink-0">
-        <div className="hidden sm:flex items-center gap-1 text-[11px] text-zinc-500">
-          <Music className="w-3 h-3 text-zinc-600" />
+        <div className="hidden sm:flex items-center gap-1 text-[11px] text-zinc-400">
+          <Music className="w-3 h-3 text-zinc-400" />
           <span>{song.trackCount} trk</span>
         </div>
 
-        <div className="hidden md:block text-[11px] text-zinc-500">
+        <div className="hidden md:block text-[11px] text-zinc-400">
           {Math.round(song.initialBpm)} BPM
         </div>
 

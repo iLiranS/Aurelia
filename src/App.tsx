@@ -250,6 +250,7 @@ export const App: React.FC = () => {
         const unlistenClock = await listen<PlaybackClockPayload>(
           "playback:clock",
           (event) => {
+            if (playbackClock.getIsScrubbing()) return;
             const { songTimeSec, isPlaying: rustIsPlaying, tempoScale } = event.payload;
             playbackClock.syncFromRust(songTimeSec, rustIsPlaying, tempoScale);
             setIsPlaying(rustIsPlaying);
@@ -314,7 +315,11 @@ export const App: React.FC = () => {
 
   return (
     <TooltipProvider delayDuration={250}>
-      <div className="relative h-screen w-screen overflow-hidden bg-[#09090b] text-zinc-100 select-none">
+      <div
+        className={`relative h-screen w-screen overflow-hidden bg-[#09090b] text-zinc-100 select-none ${
+          performanceMode ? "cursor-none [&_*]:!cursor-none" : ""
+        }`}
+      >
         {/* Full-bleed 3D Stage (R3F Canvas) - Always mounted at fixed inset-0 */}
         <main
           onClick={handleStageClick}

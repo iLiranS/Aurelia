@@ -98,6 +98,7 @@ pub fn run() {
             commands::library::rename_library_song,
             commands::library::rename_library_folder,
             commands::library::delete_library_folder,
+            commands::library::import_midi_files,
             commands::playback::audio_load_song,
             commands::playback::audio_play,
             commands::playback::audio_pause,

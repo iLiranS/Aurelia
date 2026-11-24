@@ -1,7 +1,7 @@
 import React, { useRef, useState } from "react";
 import { usePlaybackStore, cancelCountIn } from "@/stores/usePlaybackStore";
 import { playbackClock } from "@/engine/playbackClock";
-import { audioSeek } from "@/services/tauriApi";
+import { audioPause, audioPlay, audioSeek } from "@/services/tauriApi";
 
 function formatSec(sec: number): string {
   const clamped = Math.max(0, sec);
@@ -22,46 +22,70 @@ export const TimelineScrubber: React.FC = () => {
 
   const barRef = useRef<HTMLDivElement>(null);
   const isDraggingBarRef = useRef(false);
+  const dragWasPlayingRef = useRef(false);
+  const dragTargetSecRef = useRef(0);
   const isDraggingARef = useRef(false);
   const isDraggingBRef = useRef(false);
 
   const [activeDrag, setActiveDrag] = useState<"A" | "B" | null>(null);
 
-  // Seek main track position
-  const seekToClientX = (clientX: number) => {
+  // Update visual scrub position locally (no audio IPC spam while dragging)
+  const scrubToClientX = (clientX: number) => {
     if (!barRef.current || durationSec <= 0) return;
     cancelCountIn();
     const rect = barRef.current.getBoundingClientRect();
     const pct = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
     const targetSec = pct * durationSec;
 
+    dragTargetSecRef.current = targetSec;
     setDisplayTimeSec(targetSec);
     playbackClock.seekLocal(targetSec);
-    audioSeek(targetSec);
   };
 
   const handleBarPointerDown = (e: React.PointerEvent) => {
     // If dragging a pin, ignore bar click
     if (isDraggingARef.current || isDraggingBRef.current) return;
     isDraggingBarRef.current = true;
+    dragWasPlayingRef.current = usePlaybackStore.getState().isPlaying;
+    playbackClock.setScrubbing(true);
+    if (dragWasPlayingRef.current) {
+      audioPause().catch(() => {});
+    }
     (e.target as HTMLElement).setPointerCapture(e.pointerId);
-    seekToClientX(e.clientX);
+    scrubToClientX(e.clientX);
   };
 
   const handleBarPointerMove = (e: React.PointerEvent) => {
     if (isDraggingBarRef.current) {
-      seekToClientX(e.clientX);
+      scrubToClientX(e.clientX);
     }
   };
 
-  const handleBarPointerUp = (e: React.PointerEvent) => {
+  const finishBarDrag = (e: React.PointerEvent) => {
     if (!isDraggingBarRef.current) return;
     isDraggingBarRef.current = false;
+    const wasPlaying = dragWasPlayingRef.current;
+    dragWasPlayingRef.current = false;
+    const finalSec = dragTargetSecRef.current;
+
     try {
       (e.target as HTMLElement).releasePointerCapture(e.pointerId);
     } catch {
       // Ignore
     }
+
+    playbackClock.seekLocal(finalSec);
+    void (async () => {
+      try {
+        await audioSeek(finalSec).catch(() => {});
+        if (wasPlaying && usePlaybackStore.getState().isPlaying) {
+          await audioPlay().catch(() => {});
+        }
+      } finally {
+        playbackClock.seekLocal(finalSec);
+        playbackClock.setScrubbing(false);
+      }
+    })();
   };
 
   // Drag Pin A
@@ -159,7 +183,8 @@ export const TimelineScrubber: React.FC = () => {
       ref={barRef}
       onPointerDown={handleBarPointerDown}
       onPointerMove={handleBarPointerMove}
-      onPointerUp={handleBarPointerUp}
+      onPointerUp={finishBarDrag}
+      onPointerCancel={finishBarDrag}
       className="relative group flex items-center h-6 w-32 sm:w-44 md:w-56 cursor-pointer select-none py-2 touch-none"
     >
       {/* Background Track Bar */}
@@ -181,7 +206,7 @@ export const TimelineScrubber: React.FC = () => {
 
         {/* Played Progress Bar */}
         <div
-          className="h-full bg-gradient-to-r from-zinc-300 via-zinc-200 to-white rounded-full transition-[width] duration-75"
+          className="h-full bg-gradient-to-r from-zinc-300 via-zinc-200 to-white rounded-full"
           style={{ width: `${progressPct}%` }}
         />
       </div>

@@ -3,6 +3,7 @@ class PlaybackClock {
   private anchorPerfMs: number = 0;
   private isPlaying: boolean = false;
   private isWaiting: boolean = false;
+  private isScrubbing: boolean = false;
   private tempoScale: number = 1.0;
 
   constructor() {
@@ -10,10 +11,20 @@ class PlaybackClock {
   }
 
   syncFromRust(songSec: number, isPlaying: boolean, tempoScale: number): void {
+    if (this.isScrubbing) return;
     this.anchorSongSec = songSec;
     this.anchorPerfMs = performance.now();
     this.isPlaying = isPlaying;
     this.tempoScale = tempoScale;
+  }
+
+  setScrubbing(scrubbing: boolean): void {
+    this.isScrubbing = scrubbing;
+    this.anchorPerfMs = performance.now();
+  }
+
+  getIsScrubbing(): boolean {
+    return this.isScrubbing;
   }
 
   setWaiting(waiting: boolean, songSec?: number): void {
@@ -30,7 +41,9 @@ class PlaybackClock {
   }
 
   getTime(): number {
-    if (!this.isPlaying || this.isWaiting) return this.anchorSongSec;
+    if (!this.isPlaying || this.isWaiting || this.isScrubbing) {
+      return this.anchorSongSec;
+    }
     const elapsedSec = (performance.now() - this.anchorPerfMs) / 1000;
     return this.anchorSongSec + elapsedSec * this.tempoScale;
   }

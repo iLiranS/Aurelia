@@ -81,10 +81,17 @@ export const FallingNotes: React.FC = () => {
     const mesh = meshRef.current;
     if (!mesh) return;
 
-    material.uniforms.uPxPerWorld.value.set(
-      Math.max(1, size.width) / 52,
-      Math.max(1, size.height) / 100
-    );
+    const pxPerWorldX = Math.max(1, size.width) / 52;
+    const pxPerWorldY = Math.max(1, size.height) / 100;
+    material.uniforms.uPxPerWorld.value.set(pxPerWorldX, pxPerWorldY);
+
+    const { rightHandColor, leftHandColor, lookaheadSec, noteGlowEnabled } =
+      useThemeStore.getState();
+
+    const haloPadPx = noteGlowEnabled ? 13.0 : 0.0;
+    material.uniforms.uHaloPadPx.value = haloPadPx;
+    const padWorldX = haloPadPx / pxPerWorldX;
+    const padWorldY = haloPadPx / pxPerWorldY;
 
     // In Home view, waterfall is hidden behind HomeExplorer, and ListPreviewDriver controls activeNotes
     const viewMode = useViewStore.getState().viewMode;
@@ -96,9 +103,6 @@ export const FallingNotes: React.FC = () => {
       }
       return;
     }
-
-    const { rightHandColor, leftHandColor, lookaheadSec } =
-      useThemeStore.getState();
 
     // Clear song active keys buffer for this frame
     activeNotes.clearSong();
@@ -133,7 +137,11 @@ export const FallingNotes: React.FC = () => {
       const z = key.isBlack ? 0.35 : 0.25;
 
       tempObject.position.set(key.centerX, centerY, z);
-      tempObject.scale.set(noteWidth, noteHeight, 1);
+      tempObject.scale.set(
+        noteWidth + padWorldX * 2,
+        noteHeight + padWorldY * 2,
+        1
+      );
       tempObject.updateMatrix();
       mesh.setMatrixAt(count, tempObject.matrix);
 

@@ -17,6 +17,7 @@ import {
   Timer,
   Check,
   FolderPlus,
+  FilePlus,
   Mic,
   Pencil,
   Trash2,
@@ -49,6 +50,8 @@ import {
   createLibraryFolder,
   renameLibraryFolder,
   deleteLibraryFolder,
+  pickMidiFiles,
+  importMidiFiles,
 } from "@/services/tauriApi";
 import type { SongSummary } from "@/types/midi";
 
@@ -142,6 +145,33 @@ export const HomeExplorer: React.FC = () => {
   // Pick new root MIDI directory via Tauri dialog
   const handleSelectFolder = async () => {
     await selectFolder();
+  };
+
+  // Pick and copy .mid/.midi files into the currently viewed folder
+  const handleAddMidi = async () => {
+    if (!rootFolder) return;
+    try {
+      const selectedPaths = await pickMidiFiles();
+      if (selectedPaths.length === 0) return;
+      const imported = await importMidiFiles(selectedPaths, currentFolderPath);
+      if (imported.length > 0) {
+        useToastStore.getState().showToast({
+          id: "midi-imported",
+          title: imported.length === 1 ? "Added MIDI File" : `Added ${imported.length} MIDI Files`,
+          description: currentFolderPath
+            ? `Added to ${currentFolderPath}`
+            : `Added to ${rootFolderName}`,
+          durationMs: 2200,
+        });
+      }
+    } catch (err) {
+      useToastStore.getState().showToast({
+        id: "midi-import-error",
+        title: "Failed to Add MIDI",
+        description: err instanceof Error ? err.message : String(err),
+        durationMs: 3000,
+      });
+    }
   };
 
   const handleSongSelect = async (song: SongSummary) => {
@@ -563,13 +593,28 @@ export const HomeExplorer: React.FC = () => {
                   Select a directory containing .mid or .midi files to start exploring your music library.
                 </p>
               </div>
-              <button
-                onClick={handleSelectFolder}
-                className="mt-2 px-4 py-2 rounded-xl liquid-glass-accent text-xs font-medium text-primary flex items-center gap-2 transition-all cursor-pointer shadow-lg active:scale-95"
-              >
-                <FolderOpen className="w-4 h-4 text-primary" />
-                <span>Select MIDI Folder</span>
-              </button>
+              <div className="flex items-center gap-2.5 mt-2">
+                {rootFolder && (
+                  <button
+                    onClick={handleAddMidi}
+                    className="px-4 py-2 rounded-xl liquid-glass-accent text-xs font-medium text-primary flex items-center gap-2 transition-all cursor-pointer shadow-lg active:scale-95"
+                  >
+                    <FilePlus className="w-4 h-4 text-primary" />
+                    <span>Add MIDI</span>
+                  </button>
+                )}
+                <button
+                  onClick={handleSelectFolder}
+                  className={`px-4 py-2 rounded-xl text-xs font-medium flex items-center gap-2 transition-all cursor-pointer shadow-lg active:scale-95 ${
+                    rootFolder
+                      ? "liquid-glass-btn text-zinc-200 hover:text-white"
+                      : "liquid-glass-accent text-primary"
+                  }`}
+                >
+                  <FolderOpen className={`w-4 h-4 ${rootFolder ? "text-zinc-400" : "text-primary"}`} />
+                  <span>{rootFolder ? "Change Folder" : "Select MIDI Folder"}</span>
+                </button>
+              </div>
             </div>
           ) : hasSearch ? (
             /* Search Results View */
@@ -621,18 +666,30 @@ export const HomeExplorer: React.FC = () => {
                       FOLDERS
                     </span>
                     <div className="flex-1 h-px bg-white/[0.07]" />
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setNewFolderName("");
-                        setNewFolderError(null);
-                        setNewFolderOpen(true);
-                      }}
-                      className="h-6 px-2.5 rounded-full liquid-glass-btn flex items-center gap-1.5 text-[11px] text-zinc-300 hover:text-white transition-all cursor-pointer active:scale-95"
-                    >
-                      <FolderPlus className="w-3 h-3 text-primary" />
-                      <span>New Folder</span>
-                    </button>
+                    <div className="flex items-center gap-2">
+                      {folderSongs.length === 0 && (
+                        <button
+                          type="button"
+                          onClick={handleAddMidi}
+                          className="h-6 px-2.5 rounded-full liquid-glass-btn flex items-center gap-1.5 text-[11px] text-zinc-300 hover:text-white transition-all cursor-pointer active:scale-95"
+                        >
+                          <FilePlus className="w-3 h-3 text-primary" />
+                          <span>Add MIDI</span>
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setNewFolderName("");
+                          setNewFolderError(null);
+                          setNewFolderOpen(true);
+                        }}
+                        className="h-6 px-2.5 rounded-full liquid-glass-btn flex items-center gap-1.5 text-[11px] text-zinc-300 hover:text-white transition-all cursor-pointer active:scale-95"
+                      >
+                        <FolderPlus className="w-3 h-3 text-primary" />
+                        <span>New Folder</span>
+                      </button>
+                    </div>
                   </div>
 
                   <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-2">
@@ -675,13 +732,21 @@ export const HomeExplorer: React.FC = () => {
               )}
 
               {/* 2. LIBRARY PIECES IN CURRENT FOLDER */}
-              {folderSongs.length > 0 && (
+              {(folderSongs.length > 0 || immediateFolders.length === 0) && (
                 <section className="space-y-4">
                   <div className="flex items-center gap-3">
                     <span className="text-[11px] font-semibold tracking-[0.14em] text-zinc-500 uppercase">
                       LIBRARY ({folderSongs.length})
                     </span>
                     <div className="flex-1 h-px bg-white/[0.07]" />
+                    <button
+                      type="button"
+                      onClick={handleAddMidi}
+                      className="h-7 px-2.5 rounded-full liquid-glass-btn flex items-center gap-1.5 text-xs text-zinc-300 hover:text-white transition-all cursor-pointer active:scale-95"
+                    >
+                      <FilePlus className="w-3.5 h-3.5 text-primary" />
+                      <span>Add MIDI</span>
+                    </button>
                     {immediateFolders.length === 0 && (
                       <button
                         type="button"
@@ -699,7 +764,21 @@ export const HomeExplorer: React.FC = () => {
                     {libraryControls}
                   </div>
 
-                  {layoutMode === "grid" ? (
+                  {folderSongs.length === 0 ? (
+                    <div className="py-12 text-center space-y-3">
+                      <p className="text-xs text-zinc-500">
+                        This folder is empty.
+                      </p>
+                      <button
+                        type="button"
+                        onClick={handleAddMidi}
+                        className="px-3.5 py-1.5 rounded-xl liquid-glass-accent text-xs font-medium text-primary inline-flex items-center gap-1.5 transition-all cursor-pointer active:scale-95"
+                      >
+                        <FilePlus className="w-3.5 h-3.5 text-primary" />
+                        <span>Add MIDI</span>
+                      </button>
+                    </div>
+                  ) : layoutMode === "grid" ? (
                     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
                       {sortSongs(folderSongs).map((song) => (
                         <SongPreviewCard

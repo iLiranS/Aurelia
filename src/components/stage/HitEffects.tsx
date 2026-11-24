@@ -33,68 +33,134 @@ function createImpactFlareTexture(): THREE.CanvasTexture {
   return texture;
 }
 
-function createVerticalPlumeTexture(): THREE.CanvasTexture {
-  const size = 128;
-  const canvas = document.createElement("canvas");
-  canvas.width = size;
-  canvas.height = size;
-  const ctx = canvas.getContext("2d");
-  if (ctx) {
-    const imgData = ctx.createImageData(size, size);
-    const data = imgData.data;
+const PLUME_VERTEX_SHADER = /* glsl */ `
+attribute vec3 aPlumeColor;
+attribute float aPlumeAlpha;
+attribute float aPlumeSeed;
 
-    for (let py = 0; py < size; py++) {
-      // Canvas y=0 is top (v=1), y=size-1 is bottom (v=0 at Y=18.0)
-      const v = 1.0 - py / (size - 1);
-      let vert = 0;
-      if (v < 0.15) {
-        vert = Math.sin((v / 0.15) * Math.PI * 0.5);
-      } else {
-        const t = (v - 0.15) / 0.85;
-        vert = Math.pow(1.0 - t, 2.2);
-      }
+varying vec2 vUv;
+varying vec3 vPlumeColor;
+varying float vPlumeAlpha;
+varying float vSeed;
 
-      for (let px = 0; px < size; px++) {
-        const nx = (px / (size - 1)) * 2.0 - 1.0;
-        const horiz = Math.exp(-nx * nx * 4.5) * Math.max(0.0, 1.0 - nx * nx);
-        const alpha = Math.max(0.0, Math.min(1.0, horiz * vert));
+void main() {
+  vUv = uv;
+  vPlumeColor = aPlumeColor;
+  vPlumeAlpha = aPlumeAlpha;
+  vSeed = aPlumeSeed;
 
-        const idx = (py * size + px) * 4;
-        data[idx] = 255;
-        data[idx + 1] = 255;
-        data[idx + 2] = 255;
-        data[idx + 3] = Math.round(alpha * 255);
-      }
-    }
+  vec4 mvPosition = vec4(position, 1.0);
+  #ifdef USE_INSTANCING
+    mvPosition = instanceMatrix * mvPosition;
+  #endif
+  mvPosition = modelViewMatrix * mvPosition;
+  gl_Position = projectionMatrix * mvPosition;
+}
+`;
 
-    ctx.putImageData(imgData, 0, 0);
-  }
-  const texture = new THREE.CanvasTexture(canvas);
-  texture.needsUpdate = true;
-  return texture;
+const PLUME_FRAGMENT_SHADER = /* glsl */ `
+uniform float uTime;
+
+varying vec2 vUv;
+varying vec3 vPlumeColor;
+varying float vPlumeAlpha;
+varying float vSeed;
+
+float hash21(vec2 p) {
+  p = fract(p * vec2(127.1, 311.7));
+  p += dot(p, p + 45.32);
+  return fract(p.x * p.y);
 }
 
-function createOrbTexture(): THREE.CanvasTexture {
-  const size = 64;
-  const canvas = document.createElement("canvas");
-  canvas.width = size;
-  canvas.height = size;
-  const ctx = canvas.getContext("2d");
-  if (ctx) {
-    const c = size * 0.5;
-    const gradient = ctx.createRadialGradient(c, c, 0, c, c, c);
-    gradient.addColorStop(0.0, "rgba(255, 255, 255, 1.0)");
-    gradient.addColorStop(0.14, "rgba(255, 255, 255, 0.92)");
-    gradient.addColorStop(0.35, "rgba(255, 255, 255, 0.42)");
-    gradient.addColorStop(0.68, "rgba(255, 255, 255, 0.08)");
-    gradient.addColorStop(1.0, "rgba(255, 255, 255, 0.0)");
-    ctx.fillStyle = gradient;
-    ctx.fillRect(0, 0, size, size);
-  }
-  const texture = new THREE.CanvasTexture(canvas);
-  texture.needsUpdate = true;
-  return texture;
+float noise2D(vec2 p) {
+  vec2 i = floor(p);
+  vec2 f = fract(p);
+  vec2 u = f * f * (3.0 - 2.0 * f);
+  return mix(
+    mix(hash21(i), hash21(i + vec2(1.0, 0.0)), u.x),
+    mix(hash21(i + vec2(0.0, 1.0)), hash21(i + vec2(1.0, 1.0)), u.x),
+    u.y
+  );
 }
+
+float fbm2(vec2 p) {
+  float v = 0.0;
+  v += 0.65 * noise2D(p);
+  v += 0.35 * noise2D(p * 2.07 + vec2(13.1, 7.7));
+  return v;
+}
+
+void main() {
+  if (vPlumeAlpha <= 0.002) discard;
+
+  float curl = sin(vUv.y * 5.2 - uTime * 2.1 + vSeed) * 0.14 * vUv.y;
+  vec2 nUv = vec2((vUv.x - 0.5 + curl) * 3.2 + vSeed * 0.37, vUv.y * 2.6 - uTime * 1.35);
+  float n = fbm2(nUv);
+  float wisp = smoothstep(0.24, 0.78, n);
+
+  float nx = (vUv.x - 0.5) * 2.0;
+  float horiz = exp(-nx * nx * 4.2) * max(0.0, 1.0 - nx * nx);
+  float vert = smoothstep(0.0, 0.12, vUv.y) * pow(1.0 - vUv.y, 1.85);
+
+  float alpha = horiz * vert * (0.28 + 0.72 * wisp) * vPlumeAlpha;
+  gl_FragColor = vec4(vPlumeColor, alpha);
+}
+`;
+
+const PARTICLE_VERTEX_SHADER = /* glsl */ `
+attribute vec3 aPartColor;
+attribute float aPartAlpha;
+attribute float aPartKind;
+
+varying vec2 vUv;
+varying vec3 vColor;
+varying float vAlpha;
+varying float vKind;
+
+void main() {
+  vUv = uv;
+  vColor = aPartColor;
+  vAlpha = aPartAlpha;
+  vKind = aPartKind;
+
+  vec4 mvPosition = vec4(position, 1.0);
+  #ifdef USE_INSTANCING
+    mvPosition = instanceMatrix * mvPosition;
+  #endif
+  mvPosition = modelViewMatrix * mvPosition;
+  gl_Position = projectionMatrix * mvPosition;
+}
+`;
+
+const PARTICLE_FRAGMENT_SHADER = /* glsl */ `
+varying vec2 vUv;
+varying vec3 vColor;
+varying float vAlpha;
+varying float vKind;
+
+void main() {
+  vec2 p = vUv - 0.5;
+  float r = length(p);
+
+  if (vKind < 0.5) {
+    // Ember: soft glowing bokeh disc with warm bright center + delicate outer halo
+    float core = exp(-r * r * 7.0) * 0.75;
+    float bokeh = smoothstep(0.5, 0.22, r) * 0.42;
+    float shape = core + bokeh;
+    if (shape < 0.01) discard;
+    float a = shape * vAlpha;
+    gl_FragColor = vec4(vColor, a);
+  } else {
+    // Spark: crisp tapered diamond/streak with bright white-hot core
+    float d = abs(p.x) * 1.85 + abs(p.y);
+    float shape = smoothstep(0.5, 0.04, d);
+    if (shape < 0.01) discard;
+    vec3 col = mix(vColor, vec3(1.0), smoothstep(0.32, 0.0, r) * 0.85);
+    float a = shape * vAlpha;
+    gl_FragColor = vec4(col, a);
+  }
+}
+`;
 
 export const HitEffects: React.FC = () => {
   const flareMeshRef = useRef<THREE.InstancedMesh>(null);
@@ -132,11 +198,67 @@ export const HitEffects: React.FC = () => {
   const pB = useMemo(() => new Float32Array(MAX_PARTICLES), []);
   const pHeadRef = useRef<number>(0);
 
+  // Plume instanced attribute buffers (zero GC in useFrame)
+  const plumeColorArray = useMemo(() => new Float32Array(KEY_COUNT * 3), []);
+  const plumeAlphaArray = useMemo(() => new Float32Array(KEY_COUNT), []);
+  const plumeSeedArray = useMemo(() => {
+    const arr = new Float32Array(KEY_COUNT);
+    for (let k = 0; k < KEY_COUNT; k++) {
+      arr[k] = k * 1.73;
+    }
+    return arr;
+  }, []);
+
+  const plumeColorAttr = useMemo(
+    () => new THREE.InstancedBufferAttribute(plumeColorArray, 3),
+    [plumeColorArray]
+  );
+  const plumeAlphaAttr = useMemo(
+    () => new THREE.InstancedBufferAttribute(plumeAlphaArray, 1),
+    [plumeAlphaArray]
+  );
+  const plumeSeedAttr = useMemo(
+    () => new THREE.InstancedBufferAttribute(plumeSeedArray, 1),
+    [plumeSeedArray]
+  );
+
+  // Particle instanced attribute buffers (zero GC in useFrame)
+  const partColorArray = useMemo(() => new Float32Array(MAX_PARTICLES * 3), []);
+  const partAlphaArray = useMemo(() => new Float32Array(MAX_PARTICLES), []);
+  const partKindArray = useMemo(() => new Float32Array(MAX_PARTICLES), []);
+
+  const partColorAttr = useMemo(
+    () => new THREE.InstancedBufferAttribute(partColorArray, 3),
+    [partColorArray]
+  );
+  const partAlphaAttr = useMemo(
+    () => new THREE.InstancedBufferAttribute(partAlphaArray, 1),
+    [partAlphaArray]
+  );
+  const partKindAttr = useMemo(
+    () => new THREE.InstancedBufferAttribute(partKindArray, 1),
+    [partKindArray]
+  );
+
   // Geometries and materials
   const quadGeometry = useMemo(() => new THREE.PlaneGeometry(1, 1), []);
+  const plumeGeometry = useMemo(() => {
+    const geo = new THREE.PlaneGeometry(1, 1);
+    geo.setAttribute("aPlumeColor", plumeColorAttr);
+    geo.setAttribute("aPlumeAlpha", plumeAlphaAttr);
+    geo.setAttribute("aPlumeSeed", plumeSeedAttr);
+    return geo;
+  }, [plumeColorAttr, plumeAlphaAttr, plumeSeedAttr]);
+
+  const particleGeometry = useMemo(() => {
+    const geo = new THREE.PlaneGeometry(1, 1);
+    geo.setAttribute("aPartColor", partColorAttr);
+    geo.setAttribute("aPartAlpha", partAlphaAttr);
+    geo.setAttribute("aPartKind", partKindAttr);
+    return geo;
+  }, [partColorAttr, partAlphaAttr, partKindAttr]);
+
   const flareTexture = useMemo(() => createImpactFlareTexture(), []);
-  const plumeTexture = useMemo(() => createVerticalPlumeTexture(), []);
-  const orbTexture = useMemo(() => createOrbTexture(), []);
 
   const flareMaterial = useMemo(
     () =>
@@ -152,29 +274,34 @@ export const HitEffects: React.FC = () => {
 
   const plumeMaterial = useMemo(
     () =>
-      new THREE.MeshBasicMaterial({
-        map: plumeTexture,
-        toneMapped: false,
+      new THREE.ShaderMaterial({
+        uniforms: {
+          uTime: { value: 0 },
+        },
+        vertexShader: PLUME_VERTEX_SHADER,
+        fragmentShader: PLUME_FRAGMENT_SHADER,
         transparent: true,
         depthWrite: false,
+        toneMapped: false,
         blending: THREE.AdditiveBlending,
       }),
-    [plumeTexture]
+    []
   );
 
   const particleMaterial = useMemo(
     () =>
-      new THREE.MeshBasicMaterial({
-        map: orbTexture,
-        toneMapped: false,
+      new THREE.ShaderMaterial({
+        vertexShader: PARTICLE_VERTEX_SHADER,
+        fragmentShader: PARTICLE_FRAGMENT_SHADER,
         transparent: true,
         depthWrite: false,
+        toneMapped: false,
         blending: THREE.AdditiveBlending,
       }),
-    [orbTexture]
+    []
   );
 
-  // Setup instance buffers upfront
+  // Setup instance buffers upfront and dispose on unmount
   useEffect(() => {
     if (flareMeshRef.current && !flareMeshRef.current.instanceColor) {
       flareMeshRef.current.instanceColor = new THREE.InstancedBufferAttribute(
@@ -182,19 +309,25 @@ export const HitEffects: React.FC = () => {
         3
       );
     }
-    if (plumeMeshRef.current && !plumeMeshRef.current.instanceColor) {
-      plumeMeshRef.current.instanceColor = new THREE.InstancedBufferAttribute(
-        new Float32Array(KEY_COUNT * 3),
-        3
-      );
-    }
-    if (particleMeshRef.current && !particleMeshRef.current.instanceColor) {
-      particleMeshRef.current.instanceColor = new THREE.InstancedBufferAttribute(
-        new Float32Array(MAX_PARTICLES * 3),
-        3
-      );
-    }
-  }, []);
+
+    return () => {
+      quadGeometry.dispose();
+      plumeGeometry.dispose();
+      particleGeometry.dispose();
+      flareTexture.dispose();
+      flareMaterial.dispose();
+      plumeMaterial.dispose();
+      particleMaterial.dispose();
+    };
+  }, [
+    quadGeometry,
+    plumeGeometry,
+    particleGeometry,
+    flareTexture,
+    flareMaterial,
+    plumeMaterial,
+    particleMaterial,
+  ]);
 
   useFrame((state, delta) => {
     const flareMesh = flareMeshRef.current;
@@ -211,8 +344,10 @@ export const HitEffects: React.FC = () => {
     const pxPerWorldY = Math.max(1, state.size.height) / 100;
     const worldAspect = pxPerWorldX / pxPerWorldY;
 
+    plumeMaterial.uniforms.uTime.value = state.clock.elapsedTime;
+
     const showPlumes = vfxPreset !== "off";
-    const plumeBoost = vfxPreset === "mist" ? 1.25 : 1.0;
+    const isSmoke = vfxPreset === "smoke";
     const emitParticles = vfxPreset === "embers" || vfxPreset === "sparks";
 
     tempObject.rotation.set(0, 0, 0);
@@ -263,22 +398,28 @@ export const HitEffects: React.FC = () => {
         flareMesh.setMatrixAt(k, tempObject.matrix);
       }
 
-      // Layer 2: Held-Key Light Plume rising from Y = 18.0 (z = 0.85)
+      // Layer 2: Held-Key Wispy Smoke Plume rising from Y = 18.0 (z = 0.85)
       if (showPlumes && hold > 0.005) {
-        const plumeH = (7.0 + hold * 6.5) * plumeBoost;
-        const plumeW = key.width * 2.4;
+        const plumeH = isSmoke ? 10.5 + hold * 11.5 : 6.5 + hold * 5.5;
+        const plumeW = isSmoke ? key.width * 3.2 : key.width * 2.3;
+        const plumeAlpha = isSmoke ? 0.72 * hold : 0.36 * hold;
+
         tempObject.position.set(key.centerX, 18.0 + plumeH * 0.5, 0.85);
         tempObject.scale.set(plumeW, plumeH, 1);
         tempObject.updateMatrix();
         plumeMesh.setMatrixAt(k, tempObject.matrix);
 
-        tempColor.copy(baseColor).multiplyScalar(0.45 * hold * plumeBoost);
-        plumeMesh.setColorAt(k, tempColor);
+        const cIdx = k * 3;
+        plumeColorArray[cIdx] = baseColor.r;
+        plumeColorArray[cIdx + 1] = baseColor.g;
+        plumeColorArray[cIdx + 2] = baseColor.b;
+        plumeAlphaArray[k] = plumeAlpha;
       } else {
         tempObject.position.set(key.centerX, 18.0, -100);
         tempObject.scale.set(0, 0, 0);
         tempObject.updateMatrix();
         plumeMesh.setMatrixAt(k, tempObject.matrix);
+        plumeAlphaArray[k] = 0;
       }
 
       // 2. Spawn Two-Layer Particles (Impact Sparks + Bokeh Embers)
@@ -286,9 +427,9 @@ export const HitEffects: React.FC = () => {
         const spawnColor = hand === 2 ? leftThreeColor : rightThreeColor;
 
         if (prevHandState[k] === 0) {
-          // Impact Sparks (kind = 1): tight velocity-scaled burst
-          const sparkCount = Math.round(4 + vel * 3);
-          tempColor.copy(spawnColor).lerp(whiteColor, 0.35).multiplyScalar(2.1);
+          // Impact Sparks (kind = 1): wide fan-out velocity-scaled burst
+          const sparkCount = Math.round(2 + vel * 5);
+          tempColor.copy(spawnColor).lerp(whiteColor, 0.5).multiplyScalar(2.2);
 
           for (let s = 0; s < sparkCount; s++) {
             const idx = pHeadRef.current;
@@ -296,11 +437,11 @@ export const HitEffects: React.FC = () => {
 
             pActive[idx] = 1;
             pKind[idx] = 1;
-            pX[idx] = key.centerX + (Math.random() - 0.5) * key.width * 0.6;
+            pX[idx] = key.centerX + (Math.random() - 0.5) * key.width * 0.95;
             pY[idx] = 18.0 + Math.random() * 0.5;
-            pVx[idx] = ((Math.random() - 0.5) * 18.0) / worldAspect;
-            pVy[idx] = (18.0 + Math.random() * 18.0) * Math.max(0.5, vel);
-            pLife[idx] = 0.28 + Math.random() * 0.32;
+            pVx[idx] = ((Math.random() - 0.5) * 38.0) / worldAspect;
+            pVy[idx] = (16.0 + Math.random() * 18.0) * Math.max(0.5, vel);
+            pLife[idx] = 0.3 + Math.random() * 0.32;
             pAge[idx] = 0;
             pSize[idx] = 0.45 + Math.random() * 0.35;
             pR[idx] = tempColor.r;
@@ -311,6 +452,7 @@ export const HitEffects: React.FC = () => {
           // Bokeh Embers (kind = 0) on onset when preset is "embers"
           if (vfxPreset === "embers") {
             const emberCount = 2 + Math.floor(Math.random() * 3);
+            const emberBright = 1.5 * (0.45 + 0.55 * vel);
             for (let e = 0; e < emberCount; e++) {
               const idx = pHeadRef.current;
               pHeadRef.current = (pHeadRef.current + 1) % MAX_PARTICLES;
@@ -326,9 +468,9 @@ export const HitEffects: React.FC = () => {
               pSize[idx] = 0.55 + Math.random() * 0.9;
               pPhase[idx] = Math.random() * Math.PI * 2;
               pFreq[idx] = 2.5 + Math.random() * 3.0;
-              pR[idx] = spawnColor.r * 1.5;
-              pG[idx] = spawnColor.g * 1.5;
-              pB[idx] = spawnColor.b * 1.5;
+              pR[idx] = spawnColor.r * emberBright;
+              pG[idx] = spawnColor.g * emberBright;
+              pB[idx] = spawnColor.b * emberBright;
             }
           }
         } else if (vfxPreset === "embers") {
@@ -338,6 +480,7 @@ export const HitEffects: React.FC = () => {
             holdSpawnAcc[k] %= 1.0;
             const idx = pHeadRef.current;
             pHeadRef.current = (pHeadRef.current + 1) % MAX_PARTICLES;
+            const emberBright = 1.45 * (0.45 + 0.55 * vel);
 
             pActive[idx] = 1;
             pKind[idx] = 0;
@@ -350,9 +493,9 @@ export const HitEffects: React.FC = () => {
             pSize[idx] = 0.55 + Math.random() * 0.85;
             pPhase[idx] = Math.random() * Math.PI * 2;
             pFreq[idx] = 2.2 + Math.random() * 2.8;
-            pR[idx] = spawnColor.r * 1.45;
-            pG[idx] = spawnColor.g * 1.45;
-            pB[idx] = spawnColor.b * 1.45;
+            pR[idx] = spawnColor.r * emberBright;
+            pG[idx] = spawnColor.g * emberBright;
+            pB[idx] = spawnColor.b * emberBright;
           }
         }
       }
@@ -363,7 +506,8 @@ export const HitEffects: React.FC = () => {
     flareMesh.instanceMatrix.needsUpdate = true;
     if (flareMesh.instanceColor) flareMesh.instanceColor.needsUpdate = true;
     plumeMesh.instanceMatrix.needsUpdate = true;
-    if (plumeMesh.instanceColor) plumeMesh.instanceColor.needsUpdate = true;
+    plumeColorAttr.needsUpdate = true;
+    plumeAlphaAttr.needsUpdate = true;
 
     // 3. Update Particle Ring Buffer
     if (!emitParticles) {
@@ -404,8 +548,8 @@ export const HitEffects: React.FC = () => {
         tempObject.position.set(pX[i], pY[i], 1.25);
         tempObject.rotation.z = Math.atan2(-pVx[i], Math.max(0.1, pVy[i])) * 0.35;
         tempObject.scale.set(
-          (pSize[i] * 0.48) / worldAspect,
-          pSize[i] * (1.2 + speedRatio * 1.1),
+          (pSize[i] * 1.15) / worldAspect,
+          pSize[i] * (1.3 + speedRatio * 1.15),
           1
         );
       } else {
@@ -426,15 +570,23 @@ export const HitEffects: React.FC = () => {
       tempObject.updateMatrix();
       particleMesh.setMatrixAt(activeCount, tempObject.matrix);
 
-      tempColor.setRGB(pR[i] * alpha, pG[i] * alpha, pB[i] * alpha);
-      particleMesh.setColorAt(activeCount, tempColor);
+      const cIdx = activeCount * 3;
+      partColorArray[cIdx] = pR[i];
+      partColorArray[cIdx + 1] = pG[i];
+      partColorArray[cIdx + 2] = pB[i];
+      partAlphaArray[activeCount] = alpha;
+      partKindArray[activeCount] = pKind[i];
 
       activeCount++;
     }
 
     particleMesh.count = activeCount;
     particleMesh.instanceMatrix.needsUpdate = true;
-    if (particleMesh.instanceColor) particleMesh.instanceColor.needsUpdate = true;
+    if (activeCount > 0) {
+      partColorAttr.needsUpdate = true;
+      partAlphaAttr.needsUpdate = true;
+      partKindAttr.needsUpdate = true;
+    }
   });
 
   return (
@@ -446,17 +598,17 @@ export const HitEffects: React.FC = () => {
         frustumCulled={false}
       />
 
-      {/* 88 Held-Key Light Plumes (rising from Y = 18.0) */}
+      {/* 88 Held-Key Wispy Smoke Plumes (rising from Y = 18.0) */}
       <instancedMesh
         ref={plumeMeshRef}
-        args={[quadGeometry, plumeMaterial, KEY_COUNT]}
+        args={[plumeGeometry, plumeMaterial, KEY_COUNT]}
         frustumCulled={false}
       />
 
       {/* 900 Instanced Sparks & Bokeh Embers */}
       <instancedMesh
         ref={particleMeshRef}
-        args={[quadGeometry, particleMaterial, MAX_PARTICLES]}
+        args={[particleGeometry, particleMaterial, MAX_PARTICLES]}
         frustumCulled={false}
       />
     </group>

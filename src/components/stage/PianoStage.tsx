@@ -10,13 +10,14 @@ import { PianoKeyboard } from "./PianoKeyboard";
 import { HitEffects } from "./HitEffects";
 import { PianoPointerOverlay } from "./PianoPointerOverlay";
 import { NoteLabelsOverlay } from "./NoteLabelsOverlay";
-import { EffectComposer, Bloom } from "@react-three/postprocessing";
 import { useThemeStore } from "@/stores/useThemeStore";
 import { usePlaybackStore } from "@/stores/usePlaybackStore";
 import { useMidiStore } from "@/stores/useMidiStore";
 import { useViewStore } from "@/stores/useViewStore";
+import { activeNotes } from "@/engine/activeNotes";
 import {
   BLACK_KEYS,
+  PIANO_KEYS,
   WHITE_KEYS,
   getKeyDisplayLabel,
   getKeyLeftEdgeX,
@@ -123,7 +124,6 @@ uniform vec3 uBgColor;
 uniform vec3 uLeftColor;
 uniform vec3 uRightColor;
 uniform float uTime;
-uniform float uBloomEnabled;
 varying vec2 vUv;
 
 float hash21(vec2 p) {
@@ -186,7 +186,7 @@ void main() {
 
   vec3 auroraCol = mix(uLeftColor, uRightColor, smoothstep(0.15, 0.85, vUv.x + (n - 0.5) * 0.35));
   // Subtle glow lift over uBgColor without competing with falling notes
-  float strength = mix(0.18, 0.09, uBloomEnabled);
+  float strength = 0.18;
   vec3 col = mix(uBgColor, auroraCol, clamp(intensity * strength, 0.0, 0.35));
 
   // Twinkling stars in the upper sky (aspect-corrected for 52 x 82 stage)
@@ -195,7 +195,7 @@ void main() {
               + starLayer(starUv + vec2(4.2, 1.9), 30.0, 0.90, uTime * 0.8) * 0.55;
   float starMask = smoothstep(0.10, 0.38, vUv.y);
   vec3 starCol = mix(vec3(0.92, 0.95, 1.0), auroraCol, 0.25);
-  col += starCol * stars * starMask * mix(0.55, 0.28, uBloomEnabled);
+  col += starCol * stars * starMask * 0.55;
 
   gl_FragColor = vec4(col, 1.0);
   #include <colorspace_fragment>
@@ -206,7 +206,7 @@ const GLOW_FRAGMENT_SHADER = /* glsl */ `
 uniform vec3 uLeftColor;
 uniform vec3 uRightColor;
 uniform float uTime;
-uniform float uBloomEnabled;
+uniform sampler2D uKeyEnergyTex;
 varying vec2 vUv;
 
 float hash21(vec2 p) {
@@ -251,25 +251,30 @@ void main() {
   float n2 = fbm(warpedUv * 1.75 + vec2(-uTime * 0.19, -uTime * 0.15) + vec2(3.1, 5.4));
   float smoke = smoothstep(0.30, 0.80, n1 * 0.60 + n2 * 0.40);
 
+  // Sample 104x1 smoothed per-key energy + hand color texture
+  vec4 keyHit = texture2D(uKeyEnergyTex, vec2(vUv.x, 0.5));
+
   // Smooth vertical falloff from keybed (vUv.y = 0) to top (vUv.y = 1)
   float bodyFalloff = pow(1.0 - vUv.y, 1.65);
   float bodyDensity = (0.05 + 0.95 * smoke) * bodyFalloff;
+  bodyDensity *= 1.0 + keyHit.a * 0.90 * pow(1.0 - vUv.y, 1.15);
 
   // Lively rippling horizon ridge right along the keybed edge
   float h1 = noise2D(vec2(vUv.x * 36.0 + uTime * 1.4, uTime * 0.3));
   float h2 = noise2D(vec2(vUv.x * 58.0 - uTime * 0.9, 2.7));
   float horizonNoise = 0.45 + 0.55 * (h1 * 0.6 + h2 * 0.4);
   float horizonLine = exp(-vUv.y * 26.0) * horizonNoise;
+  horizonLine *= 1.0 + keyHit.a * 1.45;
 
-  // Theme color gradient across the keyboard width
+  // Theme color gradient across the keyboard width, tinted by active keys
   vec3 themeCol = mix(uLeftColor, uRightColor, smoothstep(0.15, 0.85, vUv.x));
+  themeCol = mix(themeCol, keyHit.rgb, keyHit.a * 0.65);
   vec3 deepCol = themeCol * 0.68;
   vec3 brightCol = mix(themeCol, vec3(1.0), 0.38);
   vec3 col = mix(deepCol, brightCol, clamp(horizonLine * 0.85 + smoke * 0.32, 0.0, 1.0));
 
-  // Compensate alpha between Bloom OFF (sRGB) and Bloom ON (linear EffectComposer)
-  float bodyAlpha = bodyDensity * mix(0.48, 0.17, uBloomEnabled);
-  float lineAlpha = horizonLine * mix(0.60, 0.24, uBloomEnabled);
+  float bodyAlpha = bodyDensity * 0.48;
+  float lineAlpha = horizonLine * 0.60;
   float alpha = clamp(bodyAlpha + lineAlpha, 0.0, 0.9);
 
   gl_FragColor = vec4(col, alpha);
@@ -295,8 +300,22 @@ const StageAtmosphere: React.FC = () => {
   const bgColor = useThemeStore((s) => s.bgColor);
   const leftHandColor = useThemeStore((s) => s.leftHandColor);
   const rightHandColor = useThemeStore((s) => s.rightHandColor);
-  const bloomEnabled = useThemeStore((s) => s.bloomEnabled);
   const viewMode = useViewStore((s) => s.viewMode);
+
+  const leftThreeColor = useMemo(() => new THREE.Color(leftHandColor), []);
+  const rightThreeColor = useMemo(() => new THREE.Color(rightHandColor), []);
+
+  const { energyFloat, energyBytes, keyEnergyTex } = useMemo(() => {
+    const eFloat = new Float32Array(104 * 4);
+    const eBytes = new Uint8Array(104 * 4);
+    const tex = new THREE.DataTexture(eBytes, 104, 1, THREE.RGBAFormat);
+    tex.minFilter = THREE.LinearFilter;
+    tex.magFilter = THREE.LinearFilter;
+    tex.wrapS = THREE.ClampToEdgeWrapping;
+    tex.wrapT = THREE.ClampToEdgeWrapping;
+    tex.needsUpdate = true;
+    return { energyFloat: eFloat, energyBytes: eBytes, keyEnergyTex: tex };
+  }, []);
 
   const auroraMaterial = useMemo(
     () =>
@@ -306,7 +325,6 @@ const StageAtmosphere: React.FC = () => {
           uLeftColor: { value: new THREE.Color("#a78bfa") },
           uRightColor: { value: new THREE.Color("#7dd3fc") },
           uTime: { value: 0 },
-          uBloomEnabled: { value: 1.0 },
         },
         vertexShader: ATMOSPHERE_VERTEX_SHADER,
         fragmentShader: AURORA_FRAGMENT_SHADER,
@@ -324,7 +342,7 @@ const StageAtmosphere: React.FC = () => {
           uLeftColor: { value: new THREE.Color("#a78bfa") },
           uRightColor: { value: new THREE.Color("#7dd3fc") },
           uTime: { value: 0 },
-          uBloomEnabled: { value: 1.0 },
+          uKeyEnergyTex: { value: keyEnergyTex },
         },
         vertexShader: ATMOSPHERE_VERTEX_SHADER,
         fragmentShader: GLOW_FRAGMENT_SHADER,
@@ -332,7 +350,7 @@ const StageAtmosphere: React.FC = () => {
         depthWrite: false,
         toneMapped: false,
       }),
-    []
+    [keyEnergyTex]
   );
 
   const topFadeMaterial = useMemo(
@@ -351,17 +369,20 @@ const StageAtmosphere: React.FC = () => {
   );
 
   useEffect(() => {
+    leftThreeColor.set(leftHandColor);
+    rightThreeColor.set(rightHandColor);
     auroraMaterial.uniforms.uLeftColor.value.set(leftHandColor);
     auroraMaterial.uniforms.uRightColor.value.set(rightHandColor);
     mistMaterial.uniforms.uLeftColor.value.set(leftHandColor);
     mistMaterial.uniforms.uRightColor.value.set(rightHandColor);
-  }, [leftHandColor, rightHandColor, auroraMaterial, mistMaterial]);
-
-  useEffect(() => {
-    const bVal = bloomEnabled ? 1.0 : 0.0;
-    auroraMaterial.uniforms.uBloomEnabled.value = bVal;
-    mistMaterial.uniforms.uBloomEnabled.value = bVal;
-  }, [bloomEnabled, auroraMaterial, mistMaterial]);
+  }, [
+    leftHandColor,
+    rightHandColor,
+    auroraMaterial,
+    mistMaterial,
+    leftThreeColor,
+    rightThreeColor,
+  ]);
 
   useEffect(() => {
     auroraMaterial.uniforms.uBgColor.value.set(bgColor);
@@ -373,14 +394,49 @@ const StageAtmosphere: React.FC = () => {
       auroraMaterial.dispose();
       mistMaterial.dispose();
       topFadeMaterial.dispose();
+      keyEnergyTex.dispose();
     };
-  }, [auroraMaterial, mistMaterial, topFadeMaterial]);
+  }, [auroraMaterial, mistMaterial, topFadeMaterial, keyEnergyTex]);
 
-  useFrame((state) => {
-    if (stageGlowEnabled) {
-      auroraMaterial.uniforms.uTime.value = state.clock.elapsedTime;
-      mistMaterial.uniforms.uTime.value = state.clock.elapsedTime;
+  useFrame((state, delta) => {
+    if (!stageGlowEnabled) return;
+
+    auroraMaterial.uniforms.uTime.value = state.clock.elapsedTime;
+    mistMaterial.uniforms.uTime.value = state.clock.elapsedTime;
+
+    const decay = Math.exp(-Math.min(0.1, delta) * 7.5);
+    for (let i = 0; i < 104; i++) {
+      energyFloat[i * 4 + 3] *= decay;
     }
+
+    for (let k = 0; k < 88; k++) {
+      const hand = activeNotes.getHand(k);
+      if (hand === 0) continue;
+
+      const vel = activeNotes.getVelocity(k);
+      const col = hand === 2 ? leftThreeColor : rightThreeColor;
+      const centerBucket = Math.round((PIANO_KEYS[k].centerX / 52) * 103);
+      const peakEnergy = 0.45 + 0.55 * vel;
+
+      for (let offset = -1; offset <= 1; offset++) {
+        const b = centerBucket + offset;
+        if (b < 0 || b >= 104) continue;
+        const weight = offset === 0 ? 1.0 : 0.45;
+        const energy = weight * peakEnergy;
+        const idx = b * 4;
+        if (energy > energyFloat[idx + 3]) {
+          energyFloat[idx] = col.r;
+          energyFloat[idx + 1] = col.g;
+          energyFloat[idx + 2] = col.b;
+          energyFloat[idx + 3] = energy;
+        }
+      }
+    }
+
+    for (let i = 0; i < 104 * 4; i++) {
+      energyBytes[i] = Math.min(255, Math.max(0, Math.round(energyFloat[i] * 255)));
+    }
+    keyEnergyTex.needsUpdate = true;
   });
 
   return (
@@ -505,7 +561,6 @@ const ActiveRangeVeils: React.FC = () => {
 
 export const PianoStage: React.FC = () => {
   const showKeyLabels = useThemeStore((s) => s.showKeyLabels);
-  const bloomEnabled = useThemeStore((s) => s.bloomEnabled);
   const bgColor = useThemeStore((s) => s.bgColor);
 
   return (
@@ -518,7 +573,7 @@ export const PianoStage: React.FC = () => {
         className="w-full h-full"
         dpr={[1, 1.5]}
         gl={{
-          antialias: !bloomEnabled,
+          antialias: true,
           alpha: false,
           powerPreference: "high-performance",
         }}
@@ -571,19 +626,6 @@ export const PianoStage: React.FC = () => {
 
         {/* 88-Key Instanced Piano Keyboard */}
         <PianoKeyboard />
-
-        {/* Selective Postprocessing Bloom */}
-        {bloomEnabled && (
-          <EffectComposer multisampling={0}>
-            <Bloom
-              mipmapBlur
-              luminanceThreshold={1.05}
-              intensity={0.55}
-              radius={0.72}
-              resolutionScale={0.5}
-            />
-          </EffectComposer>
-        )}
       </Canvas>
 
       {/* Retina 2D Falling-Note Labels Overlay */}

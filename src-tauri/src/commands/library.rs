@@ -543,3 +543,92 @@ pub async fn delete_library_folder(
     .await
     .map_err(|e| format!("Folder rescan task failed: {}", e))?
 }
+
+fn next_available_import_path(dir: &Path, stem: &str, ext: &str) -> PathBuf {
+    let candidate = dir.join(format!("{}.{}", stem, ext));
+    if !candidate.exists() {
+        return candidate;
+    }
+    let mut counter = 1u32;
+    loop {
+        let numbered = dir.join(format!("{} ({}).{}", stem, counter, ext));
+        if !numbered.exists() {
+            return numbered;
+        }
+        counter += 1;
+    }
+}
+
+#[tauri::command]
+pub fn import_midi_files(
+    app: AppHandle,
+    db: State<'_, Arc<LibraryDb>>,
+    source_paths: Vec<String>,
+    target_folder_relative: String,
+) -> Result<Vec<String>, String> {
+    if source_paths.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let canon_root = canonical_root(&db)?;
+    let clean_target = target_folder_relative
+        .replace('\\', "/")
+        .trim_matches('/')
+        .to_string();
+
+    let target_dir = if clean_target.is_empty() {
+        canon_root.clone()
+    } else {
+        let mut candidate = canon_root.clone();
+        for seg in clean_target.split('/').filter(|s| !s.is_empty()) {
+            let safe_seg = sanitize_single_segment(seg)?;
+            candidate.push(safe_seg);
+        }
+        if !candidate.exists() {
+            std::fs::create_dir_all(&candidate)
+                .map_err(|e| format!("Failed to create target folder: {}", e))?;
+        }
+        candidate
+    };
+
+    let canon_target_dir = std::fs::canonicalize(&target_dir)
+        .map_err(|e| format!("Target folder invalid: {}", e))?;
+    if !canon_target_dir.starts_with(&canon_root) {
+        return Err("Refused to import files outside configured MIDI library folder".to_string());
+    }
+
+    let mut imported_paths = Vec::new();
+    for raw_src in source_paths {
+        let canon_src = match std::fs::canonicalize(&raw_src) {
+            Ok(p) => p,
+            Err(_) => continue,
+        };
+        if !canon_src.is_file() || !is_midi_path(&canon_src) {
+            continue;
+        }
+
+        let raw_stem = canon_src
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or("Imported");
+        let safe_stem = sanitize_single_segment(raw_stem).unwrap_or_else(|_| "Imported".to_string());
+        let ext = canon_src
+            .extension()
+            .and_then(|e| e.to_str())
+            .map(|e| e.to_ascii_lowercase())
+            .filter(|e| e == "mid" || e == "midi")
+            .unwrap_or_else(|| "mid".to_string());
+
+        let dest_path = next_available_import_path(&canon_target_dir, &safe_stem, &ext);
+        std::fs::copy(&canon_src, &dest_path)
+            .map_err(|e| format!("Failed to copy MIDI file: {}", e))?;
+
+        let _ = index_single_file(&canon_root, &dest_path, &db);
+        imported_paths.push(dest_path.to_string_lossy().to_string());
+    }
+
+    if !imported_paths.is_empty() {
+        let _ = app.emit("library:updated", ());
+    }
+    Ok(imported_paths)
+}

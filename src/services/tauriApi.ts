@@ -265,6 +265,27 @@ export async function pickMidiFolder(): Promise<string | null> {
   return null;
 }
 
+export async function pickMidiFiles(): Promise<string[]> {
+  try {
+    const { open } = await import("@tauri-apps/plugin-dialog");
+    const selected = await open({
+      directory: false,
+      multiple: true,
+      title: "Add MIDI Files",
+      filters: [{ name: "MIDI Files", extensions: ["mid", "midi"] }],
+    });
+    if (Array.isArray(selected)) {
+      return selected.filter((p): p is string => typeof p === "string");
+    }
+    if (selected && typeof selected === "string") {
+      return [selected];
+    }
+  } catch (err) {
+    console.warn("MIDI file picker error:", err);
+  }
+  return [];
+}
+
 // Recording & Export APIs
 export interface FreeplayRecordingPayload {
   title: string;
@@ -367,4 +388,15 @@ export async function renameLibraryFolder(
 
 export async function deleteLibraryFolder(relativePath: string): Promise<void> {
   await invoke("delete_library_folder", { relativePath });
+}
+
+export async function importMidiFiles(
+  sourcePaths: string[],
+  targetFolderRelative: string
+): Promise<string[]> {
+  if (!isTauri || sourcePaths.length === 0) return [];
+  return await invoke<string[]>("import_midi_files", {
+    sourcePaths,
+    targetFolderRelative,
+  });
 }

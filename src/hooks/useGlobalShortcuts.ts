@@ -10,7 +10,13 @@ import { useRecordingStore } from "@/stores/useRecordingStore";
 import { useThemeStore } from "@/stores/useThemeStore";
 import { useMidiStore } from "@/stores/useMidiStore";
 import { playbackClock } from "@/engine/playbackClock";
-import { audioPause, audioSeek, audioSetVolume, audioStopPreview } from "@/services/tauriApi";
+import {
+  audioPause,
+  audioPlay,
+  audioSeek,
+  audioSetVolume,
+  audioStopPreview,
+} from "@/services/tauriApi";
 import { useViewStore } from "@/stores/useViewStore";
 import { showVolumeToast } from "@/components/ui/toast";
 
@@ -49,8 +55,9 @@ export function useGlobalShortcuts(): void {
     let scrubBinding: string | null = null;
     let scrubStartMs = 0;
     let scrubLastFrameMs = 0;
-    let scrubLastAudioSeekMs = 0;
+    let scrubInitialSec = 0;
     let scrubCurrentSec = 0;
+    let scrubWasPlaying = false;
 
     const stopScrub = () => {
       if (scrubRafId !== null) {
@@ -58,10 +65,35 @@ export function useGlobalShortcuts(): void {
         scrubRafId = null;
       }
       if (scrubDirection !== 0) {
-        const finalSec = scrubCurrentSec;
+        const dir = scrubDirection;
+        const wasPlaying = scrubWasPlaying;
+        const state = usePlaybackStore.getState();
+        const duration = state.durationSec;
+
+        // If released before the first rAF tick (quick tap), nudge by a crisp 2s step
+        let finalSec = scrubCurrentSec;
+        if (finalSec === scrubInitialSec && duration > 0) {
+          finalSec = Math.max(0, Math.min(duration, scrubInitialSec + dir * 2.0));
+          state.setDisplayTimeSec(finalSec);
+        }
+
         scrubDirection = 0;
         scrubBinding = null;
-        audioSeek(finalSec).catch(() => {});
+        scrubWasPlaying = false;
+
+        playbackClock.seekLocal(finalSec);
+
+        void (async () => {
+          try {
+            await audioSeek(finalSec).catch(() => {});
+            if (wasPlaying && usePlaybackStore.getState().isPlaying) {
+              await audioPlay().catch(() => {});
+            }
+          } finally {
+            playbackClock.seekLocal(finalSec);
+            playbackClock.setScrubbing(false);
+          }
+        })();
       }
     };
 
@@ -92,11 +124,6 @@ export function useGlobalShortcuts(): void {
       state.setDisplayTimeSec(scrubCurrentSec);
       playbackClock.seekLocal(scrubCurrentSec);
 
-      if (now - scrubLastAudioSeekMs >= 55) {
-        scrubLastAudioSeekMs = now;
-        audioSeek(scrubCurrentSec).catch(() => {});
-      }
-
       scrubRafId = requestAnimationFrame(stepScrub);
     };
 
@@ -110,10 +137,17 @@ export function useGlobalShortcuts(): void {
 
       scrubDirection = direction;
       scrubBinding = binding;
+      scrubWasPlaying = state.isPlaying;
       scrubStartMs = performance.now();
       scrubLastFrameMs = scrubStartMs;
-      scrubLastAudioSeekMs = 0;
-      scrubCurrentSec = playbackClock.getTime();
+      scrubInitialSec = playbackClock.getTime();
+      scrubCurrentSec = scrubInitialSec;
+
+      playbackClock.setScrubbing(true);
+      if (scrubWasPlaying) {
+        audioPause().catch(() => {});
+      }
+
       scrubRafId = requestAnimationFrame(stepScrub);
     };
 

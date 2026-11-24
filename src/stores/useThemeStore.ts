@@ -5,7 +5,7 @@ import { applyAppThemeColor } from "@/themes/themeColor";
 
 export { THEME_PRESETS, type ThemePreset };
 
-export type VfxPreset = "embers" | "sparks" | "mist" | "off";
+export type VfxPreset = "embers" | "sparks" | "smoke" | "off";
 
 export interface AppearanceSettingsJson {
   presetId: string;
@@ -13,7 +13,8 @@ export interface AppearanceSettingsJson {
   leftHandColor: string;
   particlesEnabled: boolean;
   vfxPreset?: VfxPreset;
-  bloomEnabled: boolean;
+  noteGlowEnabled?: boolean;
+  bloomEnabled?: boolean;
   lookaheadSec: number;
   showKeyLabels: boolean;
   showNoteLabels?: boolean;
@@ -33,7 +34,7 @@ interface ThemeState {
   leftHandColor: string;
   particlesEnabled: boolean;
   vfxPreset: VfxPreset;
-  bloomEnabled: boolean;
+  noteGlowEnabled: boolean;
   lookaheadSec: number;
   showKeyLabels: boolean;
   showNoteLabels: boolean;
@@ -51,7 +52,7 @@ interface ThemeState {
   setLeftHandColor: (color: string) => void;
   setParticlesEnabled: (enabled: boolean) => void;
   setVfxPreset: (preset: VfxPreset) => void;
-  setBloomEnabled: (enabled: boolean) => void;
+  setNoteGlowEnabled: (enabled: boolean) => void;
   setLookaheadSec: (seconds: number) => void;
   setShowKeyLabels: (show: boolean) => void;
   setShowNoteLabels: (show: boolean) => void;
@@ -78,7 +79,7 @@ function persistAppearanceDebounced(state: ThemeState) {
         leftHandColor: state.leftHandColor,
         particlesEnabled: state.particlesEnabled,
         vfxPreset: state.vfxPreset,
-        bloomEnabled: state.bloomEnabled,
+        noteGlowEnabled: state.noteGlowEnabled,
         lookaheadSec: state.lookaheadSec,
         showKeyLabels: state.showKeyLabels,
         showNoteLabels: state.showNoteLabels,
@@ -104,7 +105,7 @@ export const useThemeStore = create<ThemeState>((set, get) => ({
   leftHandColor: "#a78bfa",
   particlesEnabled: true,
   vfxPreset: "embers",
-  bloomEnabled: true,
+  noteGlowEnabled: true,
   lookaheadSec: 3.0,
   showKeyLabels: true,
   showNoteLabels: false,
@@ -160,8 +161,8 @@ export const useThemeStore = create<ThemeState>((set, get) => ({
     persistAppearanceDebounced(get());
   },
 
-  setBloomEnabled: (bloomEnabled) => {
-    set({ bloomEnabled });
+  setNoteGlowEnabled: (noteGlowEnabled) => {
+    set({ noteGlowEnabled });
     persistAppearanceDebounced(get());
   },
 
@@ -231,15 +232,18 @@ export const useThemeStore = create<ThemeState>((set, get) => ({
           parsed.rightHandColor ?? preset?.rightHandColor ?? state.rightHandColor;
         applyAppThemeColor(nextRight);
 
+        const rawPreset = parsed.vfxPreset as string | undefined;
         const nextVfxPreset: VfxPreset =
-          parsed.vfxPreset === "embers" ||
-          parsed.vfxPreset === "sparks" ||
-          parsed.vfxPreset === "mist" ||
-          parsed.vfxPreset === "off"
-            ? parsed.vfxPreset
-            : parsed.particlesEnabled === false
-              ? "off"
-              : state.vfxPreset;
+          rawPreset === "embers" ||
+          rawPreset === "sparks" ||
+          rawPreset === "smoke" ||
+          rawPreset === "off"
+            ? rawPreset
+            : rawPreset === "mist"
+              ? "smoke"
+              : parsed.particlesEnabled === false
+                ? "off"
+                : state.vfxPreset;
 
         const nextParticlesEnabled =
           nextVfxPreset === "embers" || nextVfxPreset === "sparks";
@@ -253,7 +257,8 @@ export const useThemeStore = create<ThemeState>((set, get) => ({
             parsed.leftHandColor ?? preset?.leftHandColor ?? state.leftHandColor,
           particlesEnabled: nextParticlesEnabled,
           vfxPreset: nextVfxPreset,
-          bloomEnabled: parsed.bloomEnabled ?? state.bloomEnabled,
+          noteGlowEnabled:
+            parsed.noteGlowEnabled ?? parsed.bloomEnabled ?? state.noteGlowEnabled,
           lookaheadSec: parsed.lookaheadSec ?? state.lookaheadSec,
           showKeyLabels: parsed.showKeyLabels ?? state.showKeyLabels,
           showNoteLabels: parsed.showNoteLabels ?? state.showNoteLabels,
