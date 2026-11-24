@@ -481,7 +481,8 @@ const ActiveRangeVeils: React.FC = () => {
 
   useFrame((_, delta) => {
     const { minMidi, keyCount, dimOutOfRange } = useMidiStore.getState();
-    const isRangeActive = dimOutOfRange && keyCount < 88;
+    const { viewMode } = useViewStore.getState();
+    const isRangeActive = viewMode !== "home" && dimOutOfRange && keyCount < 88;
     const maxMidi = Math.min(108, minMidi + keyCount - 1);
 
     const targetLeft = isRangeActive ? getKeyLeftEdgeX(minMidi) : 0;

@@ -110,16 +110,12 @@ export const HomeExplorer: React.FC = () => {
   const searchInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      const mod = isMac ? e.metaKey : e.ctrlKey;
-      if (mod && !e.shiftKey && !e.altKey && e.key.toLowerCase() === "k") {
-        e.preventDefault();
-        searchInputRef.current?.focus();
-        searchInputRef.current?.select();
-      }
+    const handleFocusSearch = () => {
+      searchInputRef.current?.focus();
+      searchInputRef.current?.select();
     };
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
+    window.addEventListener("aurelia:focus-library-search", handleFocusSearch);
+    return () => window.removeEventListener("aurelia:focus-library-search", handleFocusSearch);
   }, []);
 
   // Playback setters
@@ -583,7 +579,7 @@ export const HomeExplorer: React.FC = () => {
           )}
         </div>
 
-        {/* Center: Search Pieces with Mod+K Shortcut Badge */}
+        {/* Center: Search Pieces */}
         <div className="absolute left-1/2 -translate-x-1/2 w-56 sm:w-72 md:w-80">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-zinc-500 pointer-events-none" />
           <input
@@ -601,9 +597,9 @@ export const HomeExplorer: React.FC = () => {
                 }
               }
             }}
-            className="w-full h-8 pl-8 pr-12 text-xs rounded-full liquid-glass-input text-zinc-100 placeholder:text-zinc-500 focus:outline-none transition-all"
+            className="w-full h-8 pl-8 pr-8 text-xs rounded-full liquid-glass-input text-zinc-100 placeholder:text-zinc-500 focus:outline-none transition-all"
           />
-          {searchQuery ? (
+          {searchQuery && (
             <button
               onClick={() => setSearchQuery("")}
               className="absolute right-2.5 top-1/2 -translate-y-1/2 text-zinc-500 hover:text-zinc-300 cursor-pointer"
@@ -611,10 +607,6 @@ export const HomeExplorer: React.FC = () => {
             >
               <X className="w-3.5 h-3.5" />
             </button>
-          ) : (
-            <kbd className="absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none px-1.5 py-0.5 rounded bg-white/[0.06] border border-white/[0.08] text-[10px] font-mono text-zinc-400 leading-none">
-              {isMac ? "⌘K" : "Ctrl+K"}
-            </kbd>
           )}
         </div>
 

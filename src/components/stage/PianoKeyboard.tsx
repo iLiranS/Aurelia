@@ -5,6 +5,7 @@ import { WHITE_KEYS, BLACK_KEYS } from "@/engine/pianoLayout";
 import { activeNotes } from "@/engine/activeNotes";
 import { useThemeStore } from "@/stores/useThemeStore";
 import { useMidiStore } from "@/stores/useMidiStore";
+import { useViewStore } from "@/stores/useViewStore";
 import { createKeyboardShaderMaterial } from "./keyboardShader";
 
 const WHITE_COUNT = WHITE_KEYS.length; // 52
@@ -158,7 +159,8 @@ export const PianoKeyboard: React.FC = () => {
     leftThreeColor.set(leftHandColor);
 
     const { minMidi, keyCount, dimOutOfRange } = useMidiStore.getState();
-    const isRangeActive = dimOutOfRange && keyCount < 88;
+    const { viewMode } = useViewStore.getState();
+    const isRangeActive = viewMode !== "home" && dimOutOfRange && keyCount < 88;
     const maxMidi = minMidi + keyCount - 1;
     const pulse = 0.48 + 0.28 * Math.sin(state.clock.elapsedTime * 6.5);
     const clampedDelta = Math.min(delta, 0.05);

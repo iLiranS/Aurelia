@@ -16,9 +16,18 @@ import {
   Layers,
   Columns3,
   Rows3,
+  Trash2,
 } from "lucide-react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Switch } from "@/components/ui/switch";
 import { Slider } from "@/components/ui/slider";
 import { Separator } from "@/components/ui/separator";
@@ -91,6 +100,7 @@ export const AppearancePopover: React.FC = () => {
   const isSwitchingSoundFont = useSoundStore((s) => s.isSwitchingSoundFont);
   const selectSoundFont = useSoundStore((s) => s.selectSoundFont);
   const importSoundFont = useSoundStore((s) => s.importSoundFont);
+  const deleteSoundFont = useSoundStore((s) => s.deleteSoundFont);
   const reverbMix = useSoundStore((s) => s.reverbMix);
   const setReverbMix = useSoundStore((s) => s.setReverbMix);
   const touch = useSoundStore((s) => s.touch);
@@ -102,6 +112,31 @@ export const AppearancePopover: React.FC = () => {
   const [activeTab, setActiveTab] = useState<SettingsTab>("graphics");
   const [isSliderHovered, setIsSliderHovered] = useState(false);
   const [isSliderDragging, setIsSliderDragging] = useState(false);
+  const [deleteSfOpen, setDeleteSfOpen] = useState(false);
+  const [isDeletingSf, setIsDeletingSf] = useState(false);
+  const [deleteSfError, setDeleteSfError] = useState<string | null>(null);
+
+  const activeSoundFont = soundfonts.find((sf) => sf.path === activeSoundFontPath) ?? null;
+
+  const handleOpenDeleteSf = () => {
+    if (!activeSoundFont || activeSoundFont.isBundled) return;
+    setDeleteSfError(null);
+    setDeleteSfOpen(true);
+  };
+
+  const handleConfirmDeleteSf = async () => {
+    if (!activeSoundFont || activeSoundFont.isBundled) return;
+    setIsDeletingSf(true);
+    setDeleteSfError(null);
+    try {
+      await deleteSoundFont(activeSoundFont.path);
+      setDeleteSfOpen(false);
+    } catch (err) {
+      setDeleteSfError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setIsDeletingSf(false);
+    }
+  };
 
   // Global pointerup listener ensures drag state releases cleanly
   useEffect(() => {
@@ -112,6 +147,7 @@ export const AppearancePopover: React.FC = () => {
   }, [isSliderDragging]);
 
   return (
+    <>
     <Popover>
       <Tooltip>
         <TooltipTrigger asChild>
@@ -351,30 +387,51 @@ export const AppearancePopover: React.FC = () => {
                 </Tooltip>
               </div>
 
-              <div className="relative">
-                <select
-                  value={activeSoundFontPath || ""}
-                  onChange={(e) => selectSoundFont(e.target.value)}
-                  disabled={isSwitchingSoundFont}
-                  className="w-full h-8 px-2.5 text-xs rounded-xl bg-black/40 border border-white/[0.08] text-zinc-200 focus:outline-none focus:border-primary/50 cursor-pointer appearance-none truncate pr-7 transition-colors disabled:opacity-50"
-                >
-                  {soundfonts.length === 0 ? (
-                    <option value="" disabled className="bg-zinc-900 text-zinc-400">
-                      Default Piano
-                    </option>
-                  ) : (
-                    soundfonts.map((sf) => (
-                      <option
-                        key={sf.id}
-                        value={sf.path}
-                        className="bg-zinc-900 text-zinc-200"
-                      >
-                        {sf.name} ({sf.sizeMb} MB)
+              <div className="flex items-center gap-1.5">
+                <div className="relative flex-1 min-w-0">
+                  <select
+                    value={activeSoundFontPath || ""}
+                    onChange={(e) => selectSoundFont(e.target.value)}
+                    disabled={isSwitchingSoundFont}
+                    className="w-full h-8 px-2.5 text-xs rounded-xl bg-black/40 border border-white/[0.08] text-zinc-200 focus:outline-none focus:border-primary/50 cursor-pointer appearance-none truncate pr-7 transition-colors disabled:opacity-50"
+                  >
+                    {soundfonts.length === 0 ? (
+                      <option value="" disabled className="bg-zinc-900 text-zinc-400">
+                        Default Piano
                       </option>
-                    ))
-                  )}
-                </select>
-                <ChevronDown className="w-3.5 h-3.5 text-zinc-400 absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                    ) : (
+                      soundfonts.map((sf) => (
+                        <option
+                          key={sf.id}
+                          value={sf.path}
+                          className="bg-zinc-900 text-zinc-200"
+                        >
+                          {sf.name} ({sf.sizeMb} MB)
+                        </option>
+                      ))
+                    )}
+                  </select>
+                  <ChevronDown className="w-3.5 h-3.5 text-zinc-400 absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                </div>
+
+                {activeSoundFont && !activeSoundFont.isBundled && (
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <button
+                        type="button"
+                        onClick={handleOpenDeleteSf}
+                        disabled={isSwitchingSoundFont}
+                        className="h-8 w-8 shrink-0 rounded-xl bg-black/40 border border-white/[0.08] text-zinc-400 hover:text-rose-300 hover:border-rose-500/40 hover:bg-rose-500/10 flex items-center justify-center transition-colors cursor-pointer disabled:opacity-50"
+                        aria-label="Delete imported .sf2"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </TooltipTrigger>
+                    <TooltipContent side="top">
+                      <span>Delete imported .sf2 SoundFont</span>
+                    </TooltipContent>
+                  </Tooltip>
+                )}
               </div>
             </div>
 
@@ -419,16 +476,49 @@ export const AppearancePopover: React.FC = () => {
 
             <Separator className="bg-white/[0.08]" />
 
-            {/* Hover Audio */}
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-1.5 text-xs text-zinc-200">
-                <Volume2 className="w-3.5 h-3.5 text-indigo-400" />
-                <span>Hover Audio</span>
+            {/* Library Preview */}
+            <div className="space-y-2.5">
+              {/* Hover Audio */}
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-1.5 text-xs text-zinc-200">
+                  <Volume2 className="w-3.5 h-3.5 text-indigo-400" />
+                  <span>Hover Audio</span>
+                </div>
+                <Switch
+                  checked={previewAudioEnabled}
+                  onCheckedChange={setPreviewAudioEnabled}
+                />
               </div>
-              <Switch
-                checked={previewAudioEnabled}
-                onCheckedChange={setPreviewAudioEnabled}
-              />
+
+              {/* Preview Start */}
+              <div className="flex items-center justify-between text-xs">
+                <div className="flex items-center gap-1.5 text-zinc-200">
+                  <Flame className="w-3.5 h-3.5 text-amber-400" />
+                  <span>Preview Start</span>
+                </div>
+                <div className="flex items-center p-0.5 rounded-lg bg-black/40 border border-white/[0.08]">
+                  <button
+                    onClick={() => setPreviewStartMode("peak")}
+                    className={`px-2 py-0.5 text-[11px] font-medium rounded-md cursor-pointer liquid-glass-segment ${
+                      previewStartMode === "peak"
+                        ? "liquid-glass-segment-active text-zinc-100"
+                        : "text-zinc-400 hover:text-zinc-200"
+                    }`}
+                  >
+                    Peak
+                  </button>
+                  <button
+                    onClick={() => setPreviewStartMode("start")}
+                    className={`px-2 py-0.5 text-[11px] font-medium rounded-md cursor-pointer liquid-glass-segment ${
+                      previewStartMode === "start"
+                        ? "liquid-glass-segment-active text-zinc-100"
+                        : "text-zinc-400 hover:text-zinc-200"
+                    }`}
+                  >
+                    Start
+                  </button>
+                </div>
+              </div>
             </div>
           </div>
         )}
@@ -508,35 +598,6 @@ export const AppearancePopover: React.FC = () => {
                   onCheckedChange={setQwertyPlayEnabled}
                 />
               </div>
-
-              <div className="flex items-center justify-between text-xs">
-                <div className="flex items-center gap-1.5 text-zinc-200">
-                  <Flame className="w-3.5 h-3.5 text-amber-400" />
-                  <span>Preview Start</span>
-                </div>
-                <div className="flex items-center p-0.5 rounded-lg bg-black/40 border border-white/[0.08]">
-                  <button
-                    onClick={() => setPreviewStartMode("peak")}
-                    className={`px-2 py-0.5 text-[11px] font-medium rounded-md cursor-pointer liquid-glass-segment ${
-                      previewStartMode === "peak"
-                        ? "liquid-glass-segment-active text-zinc-100"
-                        : "text-zinc-400 hover:text-zinc-200"
-                    }`}
-                  >
-                    Peak
-                  </button>
-                  <button
-                    onClick={() => setPreviewStartMode("start")}
-                    className={`px-2 py-0.5 text-[11px] font-medium rounded-md cursor-pointer liquid-glass-segment ${
-                      previewStartMode === "start"
-                        ? "liquid-glass-segment-active text-zinc-100"
-                        : "text-zinc-400 hover:text-zinc-200"
-                    }`}
-                  >
-                    Start
-                  </button>
-                </div>
-              </div>
             </div>
 
             <Separator className="bg-white/[0.08]" />
@@ -565,5 +626,43 @@ export const AppearancePopover: React.FC = () => {
         )}
       </PopoverContent>
     </Popover>
+
+    {/* Delete SoundFont Confirmation Dialog */}
+    <Dialog open={deleteSfOpen} onOpenChange={setDeleteSfOpen}>
+      <DialogContent className="max-w-sm">
+        <DialogHeader>
+          <DialogTitle>Delete SoundFont</DialogTitle>
+          <DialogDescription>
+            Delete{" "}
+            <span className="text-zinc-200 font-medium">
+              &ldquo;{activeSoundFont?.name}&rdquo;
+            </span>{" "}
+            ({activeSoundFont?.sizeMb} MB) from disk? This cannot be undone.
+          </DialogDescription>
+        </DialogHeader>
+        {deleteSfError && (
+          <p className="text-xs text-rose-300">{deleteSfError}</p>
+        )}
+        <DialogFooter>
+          <button
+            type="button"
+            onClick={() => setDeleteSfOpen(false)}
+            disabled={isDeletingSf}
+            className="h-8 px-3 rounded-xl liquid-glass-btn text-xs text-zinc-300 hover:text-white cursor-pointer"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={handleConfirmDeleteSf}
+            disabled={isDeletingSf}
+            className="h-8 px-3.5 rounded-xl bg-rose-500/20 border border-rose-500/40 text-xs font-semibold text-rose-200 hover:bg-rose-500/30 cursor-pointer disabled:opacity-50"
+          >
+            {isDeletingSf ? "Deleting…" : "Delete"}
+          </button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+    </>
   );
 };

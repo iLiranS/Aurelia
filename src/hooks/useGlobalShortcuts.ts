@@ -218,6 +218,10 @@ export function useGlobalShortcuts(): void {
         return;
       }
 
+      if (matchedAction === "library.search" && viewMode !== "home") {
+        return;
+      }
+
       e.preventDefault();
       e.stopPropagation();
 
@@ -418,6 +422,11 @@ export function useGlobalShortcuts(): void {
 
         case "view.focus": {
           theme.togglePerformanceMode();
+          break;
+        }
+
+        case "library.search": {
+          window.dispatchEvent(new CustomEvent("aurelia:focus-library-search"));
           break;
         }
 

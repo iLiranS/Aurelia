@@ -18,6 +18,7 @@ export type ShortcutActionId =
   | "view.library"
   | "view.freeplay"
   | "view.focus"
+  | "library.search"
   | "app.shortcuts";
 
 export type ShortcutCategory = "Playback" | "Practice" | "View" | "App";
@@ -168,6 +169,13 @@ export const SHORTCUT_DEFINITIONS: ShortcutDefinition[] = [
     label: "Focus Mode",
     description: "Hide all HUD docks and focus purely on the visual stage",
     defaultBinding: "F",
+  },
+  {
+    id: "library.search",
+    category: "View",
+    label: "Search Library",
+    description: "Focus the library search bar",
+    defaultBinding: "Mod+K",
   },
 
   // App
