@@ -66,6 +66,10 @@ export const App: React.FC = () => {
       return;
     }
 
+    if (document.activeElement instanceof HTMLElement) {
+      document.activeElement.blur();
+    }
+
     const handleMouseMove = (e: MouseEvent) => {
       const enterPos = focusEnterPosRef.current;
       if (enterPos) {

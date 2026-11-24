@@ -632,3 +632,62 @@ pub fn import_midi_files(
     }
     Ok(imported_paths)
 }
+
+#[tauri::command]
+pub async fn reveal_in_file_manager(
+    db: State<'_, Arc<LibraryDb>>,
+    path: String,
+    is_relative_folder: bool,
+) -> Result<(), String> {
+    let canon_root = canonical_root(&db)?;
+    let raw_target = if is_relative_folder {
+        let clean_rel = path.replace('\\', "/").trim_matches('/').to_string();
+        if clean_rel.is_empty() {
+            canon_root.clone()
+        } else {
+            canon_root.join(&clean_rel)
+        }
+    } else {
+        PathBuf::from(&path)
+    };
+
+    let canon_target = std::fs::canonicalize(&raw_target)
+        .map_err(|e| format!("Path not found: {}", e))?;
+    if !canon_target.starts_with(&canon_root) {
+        return Err("Refused to reveal path outside configured MIDI library".to_string());
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        std::process::Command::new("open")
+            .arg("-R")
+            .arg(&canon_target)
+            .spawn()
+            .map_err(|e| format!("Failed to open Finder: {}", e))?;
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        let display_path = canon_target.to_string_lossy();
+        let clean_path = display_path.strip_prefix(r"\\?\").unwrap_or(&display_path);
+        std::process::Command::new("explorer")
+            .arg(format!("/select,{}", clean_path))
+            .spawn()
+            .map_err(|e| format!("Failed to open Explorer: {}", e))?;
+    }
+
+    #[cfg(all(unix, not(target_os = "macos")))]
+    {
+        let dir = if canon_target.is_dir() {
+            canon_target.as_path()
+        } else {
+            canon_target.parent().unwrap_or(canon_target.as_path())
+        };
+        std::process::Command::new("xdg-open")
+            .arg(dir)
+            .spawn()
+            .map_err(|e| format!("Failed to open file manager: {}", e))?;
+    }
+
+    Ok(())
+}

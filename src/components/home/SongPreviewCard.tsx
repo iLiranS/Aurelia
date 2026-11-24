@@ -70,13 +70,16 @@ interface SongPreviewCardProps {
   song: SongSummary;
   onSelect: (song: SongSummary) => void;
   onToggleFavorite: (e: React.MouseEvent, contentHash: string) => void;
+  showFolderBadge?: boolean;
 }
 
 export const SongPreviewCard: React.FC<SongPreviewCardProps> = ({
   song,
   onSelect,
   onToggleFavorite,
+  showFolderBadge = false,
 }) => {
+  const cardRef = useRef<HTMLDivElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const progressBarRef = useRef<HTMLDivElement | null>(null);
   const progressFillRef = useRef<HTMLDivElement | null>(null);
@@ -87,6 +90,7 @@ export const SongPreviewCard: React.FC<SongPreviewCardProps> = ({
   const isDraggingProgressRef = useRef(false);
   const lastAudioSeekMsRef = useRef(0);
   const [isHovered, setIsHovered] = useState(false);
+  const [isVisible, setIsVisible] = useState(true);
   const [contextPos, setContextPos] = useState<{ x: number; y: number } | null>(null);
 
   const rightHandColor = useThemeStore((s) => s.rightHandColor);
@@ -281,20 +285,47 @@ export const SongPreviewCard: React.FC<SongPreviewCardProps> = ({
     }
   };
 
+  // Lazy-allocate canvas backing store only when card is near the viewport
+  useEffect(() => {
+    const el = cardRef.current;
+    if (!el || typeof IntersectionObserver === "undefined") return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        const entry = entries[0];
+        if (entry) {
+          setIsVisible(entry.isIntersecting);
+        }
+      },
+      { rootMargin: "240px 0px" }
+    );
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
+
   // Manage static vs continuous hover loop + 300ms hover-intent audio preview
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
+
+    if (!isVisible && !isHovered) {
+      if (canvas.width !== 0 || canvas.height !== 0) {
+        canvas.width = 0;
+        canvas.height = 0;
+      }
+      return;
+    }
+
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
 
     let animId: number | null = null;
     let audioTimer: ReturnType<typeof setTimeout> | null = null;
 
-    const dpr = window.devicePixelRatio || 1;
+    const dpr = Math.min(window.devicePixelRatio || 1, 1);
     const rect = canvas.getBoundingClientRect();
-    const w = Math.floor(rect.width * dpr);
-    const h = Math.floor(rect.height * dpr);
+    const w = Math.max(1, Math.floor(rect.width * dpr));
+    const h = Math.max(1, Math.floor(rect.height * dpr));
 
     if (canvas.width !== w || canvas.height !== h) {
       canvas.width = w;
@@ -367,6 +398,7 @@ export const SongPreviewCard: React.FC<SongPreviewCardProps> = ({
       audioStopPreview().catch(() => {});
     };
   }, [
+    isVisible,
     isHovered,
     snippetNotes,
     rightHandColor,
@@ -438,6 +470,7 @@ export const SongPreviewCard: React.FC<SongPreviewCardProps> = ({
 
   return (
     <div
+      ref={cardRef}
       onClick={handleClick}
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => {
@@ -470,20 +503,21 @@ export const SongPreviewCard: React.FC<SongPreviewCardProps> = ({
             title={song.title}
             contextPos={contextPos}
             onContextPosClear={() => setContextPos(null)}
-            triggerClassName="w-7 h-7 rounded-full flex items-center justify-center transition-all cursor-pointer backdrop-blur-md bg-black/50 text-zinc-300 border border-white/[0.10] opacity-0 group-hover:opacity-100 hover:text-white hover:bg-black/80"
+            triggerClassName="w-7 h-7 flex items-center justify-center transition-all cursor-pointer drop-shadow-[0_1px_3px_rgba(0,0,0,0.85)] text-zinc-300/80 opacity-0 group-hover:opacity-100 hover:text-white"
           />
           <button
             onClick={(e) => onToggleFavorite(e, song.contentHash)}
-            className={`w-7 h-7 rounded-full flex items-center justify-center transition-all cursor-pointer backdrop-blur-md ${
+            className={`w-7 h-7 flex items-center justify-center transition-all cursor-pointer drop-shadow-[0_1px_3px_rgba(0,0,0,0.85)] ${
               song.isFavorite
-                ? "bg-amber-500/20 text-amber-400 border border-amber-400/40 opacity-100"
-                : "bg-black/50 text-zinc-400 border border-white/[0.10] opacity-0 group-hover:opacity-100 hover:text-amber-400 hover:bg-black/80"
+                ? "text-primary opacity-90 hover:opacity-100"
+                : "text-zinc-300/80 opacity-0 group-hover:opacity-100 hover:text-primary"
             }`}
             aria-label={song.isFavorite ? "Unpin song" : "Pin song"}
           >
             <Star
-              className={`w-3.5 h-3.5 ${
-                song.isFavorite ? "fill-amber-400" : ""
+              strokeWidth={1.6}
+              className={`w-4 h-4 ${
+                song.isFavorite ? "fill-primary/80" : ""
               }`}
             />
           </button>
@@ -493,7 +527,7 @@ export const SongPreviewCard: React.FC<SongPreviewCardProps> = ({
         <div className="absolute top-2 left-2 px-2 py-0.5 rounded-full bg-black/50 backdrop-blur-md border border-white/[0.10] flex items-center gap-1 opacity-0 group-hover:opacity-95 transition-opacity">
           <Music2 className="w-3 h-3 text-primary" />
           <span className="text-[10px] text-zinc-300 font-mono">
-            {song.trackCount} trk
+            {song.trackCount} trk · {Math.round(song.initialBpm)} BPM
           </span>
         </div>
 
@@ -532,14 +566,13 @@ export const SongPreviewCard: React.FC<SongPreviewCardProps> = ({
           </span>
         </div>
 
-        <div className="flex items-center justify-between text-xs text-zinc-500">
-          <span className="truncate max-w-[160px] text-[11px] text-zinc-400">
-            {folderName}
-          </span>
-          <span className="font-mono text-[11px] tabular-nums text-zinc-500 shrink-0">
-            {Math.round(song.initialBpm)} BPM
-          </span>
-        </div>
+        {showFolderBadge && (
+          <div className="flex items-center text-xs text-zinc-500">
+            <span className="truncate max-w-[160px] text-[11px] text-zinc-400">
+              {folderName}
+            </span>
+          </div>
+        )}
       </div>
     </div>
   );

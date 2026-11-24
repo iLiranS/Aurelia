@@ -2,6 +2,7 @@ import React, { useEffect, useState } from "react";
 import {
   FileAudio,
   FolderInput,
+  FolderOpen,
   Loader2,
   MoreHorizontal,
   Music,
@@ -25,7 +26,9 @@ import {
   exportSongAudio,
   moveLibrarySong,
   renameLibrarySong,
+  revealInFileManager,
 } from "@/services/tauriApi";
+import { isMac } from "@/types/shortcuts";
 import { useLibraryStore } from "@/stores/useLibraryStore";
 import { usePlaybackStore } from "@/stores/usePlaybackStore";
 import { useViewStore } from "@/stores/useViewStore";
@@ -356,6 +359,24 @@ export const PieceActionsMenu: React.FC<PieceActionsMenuProps> = ({
           >
             <FolderInput className="w-3.5 h-3.5 text-zinc-400" />
             <span>Move to Folder…</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              handleMenuOpenChange(false);
+              void revealInFileManager(filePath, false).catch((err) => {
+                useToastStore.getState().showToast({
+                  id: "reveal-error",
+                  title: "Could Not Reveal File",
+                  description: err instanceof Error ? err.message : String(err),
+                  durationMs: 3000,
+                });
+              });
+            }}
+            className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-xs text-zinc-200 hover:text-white hover:bg-white/[0.08] cursor-pointer transition-colors text-left"
+          >
+            <FolderOpen className="w-3.5 h-3.5 text-zinc-400" />
+            <span>{isMac ? "Reveal in Finder" : "Show in Explorer"}</span>
           </button>
 
           <div className="my-1 h-px bg-white/[0.08]" />

@@ -37,11 +37,11 @@ const NoteLabelsCanvas: React.FC = () => {
 
     let cssW = 0;
     let cssH = 0;
-    let dpr = window.devicePixelRatio || 1;
+    let dpr = Math.min(window.devicePixelRatio || 1, 1.5);
 
     const updateSize = () => {
       const rect = canvas.getBoundingClientRect();
-      dpr = window.devicePixelRatio || 1;
+      dpr = Math.min(window.devicePixelRatio || 1, 1.5);
       cssW = rect.width;
       cssH = rect.height;
       canvas.width = Math.max(1, Math.round(cssW * dpr));

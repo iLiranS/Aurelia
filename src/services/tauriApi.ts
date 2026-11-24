@@ -400,3 +400,14 @@ export async function importMidiFiles(
     targetFolderRelative,
   });
 }
+
+export async function revealInFileManager(
+  path: string,
+  isRelativeFolder = false
+): Promise<void> {
+  if (!isTauri) return;
+  await invoke("reveal_in_file_manager", {
+    path,
+    isRelativeFolder,
+  });
+}

@@ -18,12 +18,14 @@ interface SongListRowProps {
   song: SongSummary;
   onSelect: (song: SongSummary) => void;
   onToggleFavorite: (e: React.MouseEvent, contentHash: string) => void;
+  showFolderBadge?: boolean;
 }
 
 export const SongListRow: React.FC<SongListRowProps> = ({
   song,
   onSelect,
   onToggleFavorite,
+  showFolderBadge = false,
 }) => {
   const [isPreviewing, setIsPreviewing] = useState(false);
   const [contextPos, setContextPos] = useState<{ x: number; y: number } | null>(null);
@@ -207,7 +209,7 @@ export const SongListRow: React.FC<SongListRowProps> = ({
         e.stopPropagation();
         setContextPos({ x: e.clientX, y: e.clientY });
       }}
-      className={`group relative overflow-hidden flex items-center justify-between px-3.5 py-2.5 rounded-xl liquid-glass-btn cursor-pointer transition-all select-none ${
+      className={`group relative overflow-hidden flex items-center justify-between px-3.5 py-2.5 rounded-xl liquid-glass-btn active:!transform-none cursor-pointer transition-all select-none ${
         isPreviewing ? "border-amber-400/30 bg-white/[0.06]" : "hover:border-white/18"
       }`}
     >
@@ -217,14 +219,15 @@ export const SongListRow: React.FC<SongListRowProps> = ({
           onClick={(e) => onToggleFavorite(e, song.contentHash)}
           className={`w-6 h-6 rounded-md flex items-center justify-center transition-all cursor-pointer ${
             song.isFavorite
-              ? "text-amber-400"
-              : "text-zinc-500 hover:text-amber-400 opacity-40 group-hover:opacity-100"
+              ? "text-primary opacity-90 hover:opacity-100"
+              : "text-zinc-500 hover:text-primary opacity-40 group-hover:opacity-100"
           }`}
           aria-label={song.isFavorite ? "Unpin song" : "Pin song"}
         >
           <Star
+            strokeWidth={1.6}
             className={`w-3.5 h-3.5 ${
-              song.isFavorite ? "fill-amber-400" : ""
+              song.isFavorite ? "fill-primary/80" : ""
             }`}
           />
         </button>
@@ -251,14 +254,16 @@ export const SongListRow: React.FC<SongListRowProps> = ({
           >
             {song.title}
           </h4>
-          <span className="text-[10px] text-zinc-400 truncate block">
-            {folderName}
-          </span>
+          {showFolderBadge && (
+            <span className="text-[10px] text-zinc-400 truncate block">
+              {folderName}
+            </span>
+          )}
         </div>
       </div>
 
       {/* Right: Metadata pills and duration */}
-      <div className="flex items-center gap-4 text-xs font-mono tabular-nums text-zinc-400 shrink-0">
+      <div className="relative z-20 flex items-center gap-4 text-xs font-mono tabular-nums text-zinc-400 shrink-0">
         <div className="hidden sm:flex items-center gap-1 text-[11px] text-zinc-400">
           <Music className="w-3 h-3 text-zinc-400" />
           <span>{song.trackCount} trk</span>
