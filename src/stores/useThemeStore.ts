@@ -2,8 +2,9 @@ import { create } from "zustand";
 import { THEME_PRESETS, type ThemePreset } from "@/themes/presets";
 import { setAppSetting } from "@/services/tauriApi";
 import { applyAppThemeColor } from "@/themes/themeColor";
+import type { NoteNamingSystem } from "@/engine/pianoLayout";
 
-export { THEME_PRESETS, type ThemePreset };
+export { THEME_PRESETS, type ThemePreset, type NoteNamingSystem };
 
 export type VfxPreset = "embers" | "sparks" | "smoke" | "off";
 
@@ -18,6 +19,7 @@ export interface AppearanceSettingsJson {
   lookaheadSec: number;
   showKeyLabels: boolean;
   showNoteLabels?: boolean;
+  noteNaming?: NoteNamingSystem;
   noteHighlightEnabled?: boolean;
   qwertyPlayEnabled?: boolean;
   previewStartMode?: "peak" | "start";
@@ -39,6 +41,7 @@ interface ThemeState {
   lookaheadSec: number;
   showKeyLabels: boolean;
   showNoteLabels: boolean;
+  noteNaming: NoteNamingSystem;
   noteHighlightEnabled: boolean;
   performanceMode: boolean;
   qwertyPlayEnabled: boolean;
@@ -58,6 +61,7 @@ interface ThemeState {
   setLookaheadSec: (seconds: number) => void;
   setShowKeyLabels: (show: boolean) => void;
   setShowNoteLabels: (show: boolean) => void;
+  setNoteNaming: (noteNaming: NoteNamingSystem) => void;
   setNoteHighlightEnabled: (enabled: boolean) => void;
   setPerformanceMode: (perf: boolean) => void;
   togglePerformanceMode: () => void;
@@ -86,6 +90,7 @@ function persistAppearanceDebounced(state: ThemeState) {
         lookaheadSec: state.lookaheadSec,
         showKeyLabels: state.showKeyLabels,
         showNoteLabels: state.showNoteLabels,
+        noteNaming: state.noteNaming,
         noteHighlightEnabled: state.noteHighlightEnabled,
         qwertyPlayEnabled: state.qwertyPlayEnabled,
         previewStartMode: state.previewStartMode,
@@ -113,6 +118,7 @@ export const useThemeStore = create<ThemeState>((set, get) => ({
   lookaheadSec: 3.0,
   showKeyLabels: true,
   showNoteLabels: false,
+  noteNaming: "letter",
   noteHighlightEnabled: true,
   performanceMode: false,
   qwertyPlayEnabled: false,
@@ -183,6 +189,11 @@ export const useThemeStore = create<ThemeState>((set, get) => ({
 
   setShowNoteLabels: (showNoteLabels) => {
     set({ showNoteLabels });
+    persistAppearanceDebounced(get());
+  },
+
+  setNoteNaming: (noteNaming) => {
+    set({ noteNaming });
     persistAppearanceDebounced(get());
   },
 
@@ -272,6 +283,10 @@ export const useThemeStore = create<ThemeState>((set, get) => ({
           lookaheadSec: parsed.lookaheadSec ?? state.lookaheadSec,
           showKeyLabels: parsed.showKeyLabels ?? state.showKeyLabels,
           showNoteLabels: parsed.showNoteLabels ?? state.showNoteLabels,
+          noteNaming:
+            parsed.noteNaming === "solfege" || parsed.noteNaming === "letter"
+              ? parsed.noteNaming
+              : state.noteNaming,
           noteHighlightEnabled:
             parsed.noteHighlightEnabled ?? state.noteHighlightEnabled,
           qwertyPlayEnabled: parsed.qwertyPlayEnabled ?? state.qwertyPlayEnabled,

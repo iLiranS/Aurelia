@@ -40,6 +40,7 @@ export const HandControlsPopover: React.FC = () => {
 
   const rightHandColor = useThemeStore((s) => s.rightHandColor);
   const leftHandColor = useThemeStore((s) => s.leftHandColor);
+  const noteNaming = useThemeStore((s) => s.noteNaming);
 
   const handleTrackRoleChange = (trackIndex: number, role: HandRole) => {
     const updated = { ...trackHands, [trackIndex]: role };
@@ -55,7 +56,7 @@ export const HandControlsPopover: React.FC = () => {
       <div className="flex items-center justify-between text-xs">
         <span className="text-[11px] text-zinc-400">Split Key</span>
         <span className="font-mono font-semibold text-primary tabular-nums">
-          {midiToNoteName(splitPointMidi)} ({splitPointMidi})
+          {midiToNoteName(splitPointMidi, noteNaming)} ({splitPointMidi})
         </span>
       </div>
       <Slider
@@ -66,9 +67,9 @@ export const HandControlsPopover: React.FC = () => {
         onValueChange={([val]) => setSplitPointMidi(val)}
       />
       <div className="flex justify-between text-[9px] text-zinc-500 font-mono">
-        <span>C2 (Bass)</span>
-        <span>C4 (Middle)</span>
-        <span>C6 (Treble)</span>
+        <span>{midiToNoteName(36, noteNaming)} (Bass)</span>
+        <span>{midiToNoteName(60, noteNaming)} (Middle)</span>
+        <span>{midiToNoteName(84, noteNaming)} (Treble)</span>
       </div>
     </div>
   );

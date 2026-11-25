@@ -13,8 +13,15 @@ export interface KeyGeometry {
   noteName: string;
 }
 
+export type NoteNamingSystem = "letter" | "solfege";
+
 const NOTE_NAMES = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
 const NOTE_NAMES_SHARP = ["C", "C♯", "D", "D♯", "E", "F", "F♯", "G", "G♯", "A", "A♯", "B"];
+const LETTER_BASE = ["C", "C", "D", "D", "E", "F", "F", "G", "G", "A", "A", "B"];
+
+const SOLFEGE_NAMES = ["Do", "Do#", "Re", "Re#", "Mi", "Fa", "Fa#", "Sol", "Sol#", "La", "La#", "Si"];
+const SOLFEGE_NAMES_SHARP = ["Do", "Do♯", "Re", "Re♯", "Mi", "Fa", "Fa♯", "Sol", "Sol♯", "La", "La♯", "Si"];
+const SOLFEGE_BASE = ["Do", "Do", "Re", "Re", "Mi", "Fa", "Fa", "Sol", "Sol", "La", "La", "Si"];
 
 const IS_BLACK_PITCH_CLASS = [
   false, // 0: C
@@ -120,20 +127,42 @@ export function getKeyByMidi(midi: number): KeyGeometry | undefined {
   return PIANO_KEYS[midi - 21];
 }
 
-export function midiToNoteName(midi: number): string {
-  const pc = midi % 12;
-  const octave = Math.floor(midi / 12) - 1;
-  return `${NOTE_NAMES[pc]}${octave}`;
+export function getNoteBaseName(
+  midi: number,
+  naming: NoteNamingSystem = "letter"
+): string {
+  const pc = ((midi % 12) + 12) % 12;
+  return naming === "solfege" ? SOLFEGE_BASE[pc] : LETTER_BASE[pc];
 }
 
-export function getNoteLetter(midi: number): string {
-  return NOTE_NAMES_SHARP[((midi % 12) + 12) % 12];
-}
-
-export function getKeyDisplayLabel(midi: number): string {
+export function midiToNoteName(
+  midi: number,
+  naming: NoteNamingSystem = "letter"
+): string {
   const pc = ((midi % 12) + 12) % 12;
   const octave = Math.floor(midi / 12) - 1;
-  return pc === 0 ? `C${octave}` : NOTE_NAMES_SHARP[pc];
+  const names = naming === "solfege" ? SOLFEGE_NAMES : NOTE_NAMES;
+  return `${names[pc]}${octave}`;
+}
+
+export function getNoteLetter(
+  midi: number,
+  naming: NoteNamingSystem = "letter"
+): string {
+  const pc = ((midi % 12) + 12) % 12;
+  const names = naming === "solfege" ? SOLFEGE_NAMES_SHARP : NOTE_NAMES_SHARP;
+  return names[pc];
+}
+
+export function getKeyDisplayLabel(
+  midi: number,
+  naming: NoteNamingSystem = "letter"
+): string {
+  const pc = ((midi % 12) + 12) % 12;
+  const octave = Math.floor(midi / 12) - 1;
+  return pc === 0
+    ? `${getNoteBaseName(midi, naming)}${octave}`
+    : getNoteLetter(midi, naming);
 }
 
 export function getKeySplitX(midi: number): number {

@@ -16,6 +16,7 @@ import {
   useMidiStore,
   type KeyboardRangePreset,
 } from "@/stores/useMidiStore";
+import { useThemeStore } from "@/stores/useThemeStore";
 import { midiToNoteName } from "@/engine/pianoLayout";
 import { listMidiDevices } from "@/services/tauriApi";
 
@@ -55,6 +56,7 @@ export const MidiDevicePopover: React.FC = () => {
   const autoOctaveFollow = useMidiStore((s) => s.autoOctaveFollow);
   const dimOutOfRange = useMidiStore((s) => s.dimOutOfRange);
   const skipOutOfRangeInStudy = useMidiStore((s) => s.skipOutOfRangeInStudy);
+  const noteNaming = useThemeStore((s) => s.noteNaming);
 
   const setDevices = useMidiStore((s) => s.setDevices);
   const connectDevice = useMidiStore((s) => s.connectDevice);
@@ -233,7 +235,7 @@ export const MidiDevicePopover: React.FC = () => {
                       : "text-zinc-400 hover:text-zinc-200"
                   }`}
                 >
-                  F3
+                  {midiToNoteName(53, noteNaming)}
                 </button>
                 <button
                   onClick={() => setRangePreset("32-c")}
@@ -243,7 +245,7 @@ export const MidiDevicePopover: React.FC = () => {
                       : "text-zinc-400 hover:text-zinc-200"
                   }`}
                 >
-                  C3
+                  {midiToNoteName(48, noteNaming)}
                 </button>
               </div>
             </div>
@@ -261,7 +263,7 @@ export const MidiDevicePopover: React.FC = () => {
               </button>
 
               <span className="text-xs font-mono font-medium text-zinc-200 tabular-nums">
-                {midiToNoteName(minMidi)} – {midiToNoteName(maxMidi)}
+                {midiToNoteName(minMidi, noteNaming)} – {midiToNoteName(maxMidi, noteNaming)}
               </span>
 
               <button

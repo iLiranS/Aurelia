@@ -89,6 +89,8 @@ export const AppearancePopover: React.FC = () => {
   const setShowKeyLabels = useThemeStore((s) => s.setShowKeyLabels);
   const showNoteLabels = useThemeStore((s) => s.showNoteLabels);
   const setShowNoteLabels = useThemeStore((s) => s.setShowNoteLabels);
+  const noteNaming = useThemeStore((s) => s.noteNaming);
+  const setNoteNaming = useThemeStore((s) => s.setNoteNaming);
   const noteHighlightEnabled = useThemeStore((s) => s.noteHighlightEnabled);
   const setNoteHighlightEnabled = useThemeStore((s) => s.setNoteHighlightEnabled);
   const qwertyPlayEnabled = useThemeStore((s) => s.qwertyPlayEnabled);
@@ -589,6 +591,34 @@ export const AppearancePopover: React.FC = () => {
                   checked={showNoteLabels}
                   onCheckedChange={setShowNoteLabels}
                 />
+              </div>
+
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-xs text-zinc-300">Note Naming</span>
+                <div className="flex items-center gap-1 p-0.5 rounded-lg liquid-glass-segment">
+                  <button
+                    type="button"
+                    onClick={() => setNoteNaming("letter")}
+                    className={`px-2 h-6 rounded-md text-[11px] font-medium transition-all cursor-pointer ${
+                      noteNaming === "letter"
+                        ? "bg-primary text-zinc-950 font-semibold shadow-sm"
+                        : "text-zinc-400 hover:text-zinc-200"
+                    }`}
+                  >
+                    C D E
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setNoteNaming("solfege")}
+                    className={`px-2 h-6 rounded-md text-[11px] font-medium transition-all cursor-pointer ${
+                      noteNaming === "solfege"
+                        ? "bg-primary text-zinc-950 font-semibold shadow-sm"
+                        : "text-zinc-400 hover:text-zinc-200"
+                    }`}
+                  >
+                    Do Re Mi
+                  </button>
+                </div>
               </div>
 
               <div className="flex items-center justify-between">

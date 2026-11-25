@@ -24,7 +24,7 @@ import {
   WHITE_KEYS,
   getKeyDisplayLabel,
   getKeySplitX,
-  getNoteLetter,
+  getNoteBaseName,
   getRangeBoundsX,
 } from "@/engine/pianoLayout";
 
@@ -565,6 +565,7 @@ const ActiveRangeVeils: React.FC = () => {
 
 export const PianoStage: React.FC = () => {
   const showKeyLabels = useThemeStore((s) => s.showKeyLabels);
+  const noteNaming = useThemeStore((s) => s.noteNaming);
   const bgColor = useThemeStore((s) => s.bgColor);
   const viewMode = useViewStore((s) => s.viewMode);
   const minMidi = useMidiStore((s) => s.minMidi);
@@ -798,23 +799,29 @@ export const PianoStage: React.FC = () => {
               const isC = key.pitchClass === 0;
               const isMiddleC = key.midi === 60;
               const isDimmed = isRangeActive && (key.midi < minMidi || key.midi > maxMidi);
+              const sizeClass =
+                noteNaming === "solfege"
+                  ? isMiddleC
+                    ? "text-[9.5px] text-zinc-950 font-extrabold"
+                    : isC
+                      ? "text-[9px] text-zinc-900 font-bold"
+                      : "text-[8px] text-zinc-700/90 font-semibold"
+                  : isMiddleC
+                    ? "text-[11px] text-zinc-950 font-extrabold"
+                    : isC
+                      ? "text-[10.5px] text-zinc-900 font-bold"
+                      : "text-[9.5px] text-zinc-700/90 font-semibold";
               return (
                 <span
                   key={key.midi}
                   className={`absolute bottom-0 font-sans -translate-x-1/2 leading-none tracking-tight transition-opacity ${
                     isDimmed ? "opacity-20 " : ""
-                  }${
-                    isMiddleC
-                      ? "text-[11px] text-zinc-950 font-extrabold"
-                      : isC
-                        ? "text-[10.5px] text-zinc-900 font-bold"
-                        : "text-[9.5px] text-zinc-700/90 font-semibold"
-                  }`}
+                  }${sizeClass}`}
                   style={{
                     left: `${(key.centerX / 52) * 100}%`,
                   }}
                 >
-                  {getKeyDisplayLabel(key.midi)}
+                  {getKeyDisplayLabel(key.midi, noteNaming)}
                 </span>
               );
             })}
@@ -823,20 +830,24 @@ export const PianoStage: React.FC = () => {
           {/* 36 Black Key Sharp Labels with crisp superscript # */}
           <div className="hidden lg:block absolute inset-0 pointer-events-none select-none z-10">
             {BLACK_KEYS.map((key) => {
-              const letter = getNoteLetter(key.midi).charAt(0);
+              const baseName = getNoteBaseName(key.midi, noteNaming);
               const isDimmed = isRangeActive && (key.midi < minMidi || key.midi > maxMidi);
               return (
                 <span
                   key={key.midi}
-                  className={`absolute bottom-[7.6%] -translate-x-1/2 inline-flex items-start font-sans text-[9.5px] font-bold leading-none text-white/95 drop-shadow-[0_1px_2px_rgba(0,0,0,0.95)] transition-opacity ${
-                    isDimmed ? "opacity-20" : ""
-                  }`}
+                  className={`absolute bottom-[7.6%] -translate-x-1/2 inline-flex items-start font-sans font-bold leading-none text-white/95 drop-shadow-[0_1px_2px_rgba(0,0,0,0.95)] transition-opacity ${
+                    noteNaming === "solfege" ? "text-[7.5px] tracking-tighter" : "text-[9.5px]"
+                  } ${isDimmed ? "opacity-20" : ""}`}
                   style={{
                     left: `${(key.centerX / 52) * 100}%`,
                   }}
                 >
-                  <span>{letter}</span>
-                  <span className="text-[7.5px] font-bold opacity-85 -mt-[1px] ml-[0.5px]">
+                  <span>{baseName}</span>
+                  <span
+                    className={`font-bold opacity-85 -mt-[1px] ml-[0.5px] ${
+                      noteNaming === "solfege" ? "text-[6px]" : "text-[7.5px]"
+                    }`}
+                  >
                     #
                   </span>
                 </span>
