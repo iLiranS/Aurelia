@@ -15,6 +15,7 @@ import {
   Contrast,
   Layers,
   Columns3,
+  Columns2,
   Rows3,
   Trash2,
 } from "lucide-react";
@@ -88,6 +89,8 @@ export const AppearancePopover: React.FC = () => {
   const setShowKeyLabels = useThemeStore((s) => s.setShowKeyLabels);
   const showNoteLabels = useThemeStore((s) => s.showNoteLabels);
   const setShowNoteLabels = useThemeStore((s) => s.setShowNoteLabels);
+  const noteHighlightEnabled = useThemeStore((s) => s.noteHighlightEnabled);
+  const setNoteHighlightEnabled = useThemeStore((s) => s.setNoteHighlightEnabled);
   const qwertyPlayEnabled = useThemeStore((s) => s.qwertyPlayEnabled);
   const setQwertyPlayEnabled = useThemeStore((s) => s.setQwertyPlayEnabled);
   const previewStartMode = useThemeStore((s) => s.previewStartMode);
@@ -585,6 +588,17 @@ export const AppearancePopover: React.FC = () => {
                 <Switch
                   checked={showNoteLabels}
                   onCheckedChange={setShowNoteLabels}
+                />
+              </div>
+
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-1.5 text-xs text-zinc-200">
+                  <Columns2 className="w-3.5 h-3.5 text-sky-400" />
+                  <span>Note Highlight</span>
+                </div>
+                <Switch
+                  checked={noteHighlightEnabled}
+                  onCheckedChange={setNoteHighlightEnabled}
                 />
               </div>
 

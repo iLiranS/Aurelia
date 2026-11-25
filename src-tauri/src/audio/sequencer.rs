@@ -45,6 +45,11 @@ pub struct Sequencer {
     pub preview_bypass_study: bool,
     pub study_wait_right: bool,
     pub study_wait_left: bool,
+    pub study_melody_only: bool,
+    pub mute_melody_harmony_audio: bool,
+    pub melody_mask: Vec<bool>,
+    pub melody_mask_dirty: bool,
+    pub deferred_accompaniment: Vec<(u8, u8, u32, u8, usize)>, // (key, vel, track, hand, ev_idx)
     pub study_skip_out_of_range: bool,
     pub study_min_midi: u8,
     pub study_max_midi: u8,
@@ -83,6 +88,11 @@ impl Sequencer {
             preview_bypass_study: false,
             study_wait_right: true,
             study_wait_left: true,
+            study_melody_only: false,
+            mute_melody_harmony_audio: false,
+            melody_mask: Vec::new(),
+            melody_mask_dirty: false,
+            deferred_accompaniment: Vec::new(),
             study_skip_out_of_range: true,
             study_min_midi: 21,
             study_max_midi: 108,
@@ -109,7 +119,11 @@ impl Sequencer {
         self.loop_end_sec = settings.loop_end_sec;
         self.transpose_semitones = settings.transpose_semitones.clamp(-12, 12);
         self.preview_bypass_study = false;
+        self.melody_mask_dirty = true;
         self.clear_wait_state();
+        if self.study_melody_only {
+            self.recompute_melody_mask();
+        }
     }
 
     pub fn seek(&mut self, target_sec: f64) {
@@ -126,15 +140,123 @@ impl Sequencer {
         self.waiting_keys = [false; 128];
         self.waiting_keys_hand = [0; 128];
         self.recent_live_hits.fill(-1.0);
+        self.deferred_accompaniment.clear();
         if changed {
             self.wait_state_version += 1;
         }
     }
 
-    pub fn set_study_mode(&mut self, enabled: bool, wait_right: bool, wait_left: bool) {
+    pub fn mark_melody_mask_dirty(&mut self) {
+        self.melody_mask_dirty = true;
+    }
+
+    #[inline]
+    pub fn is_right_hand_note(&self, key: u8, track_index: u32, default_hand: u8) -> bool {
+        if !self.use_split_point
+            && matches!(self.track_hands.get(&track_index), Some(HandRole::None))
+        {
+            return false;
+        }
+        self.resolve_is_right(key, track_index, default_hand)
+    }
+
+    pub fn recompute_melody_mask(&mut self) {
+        let n = self.events.len();
+        self.melody_mask.resize(n, false);
+        self.melody_mask.fill(false);
+        self.melody_mask_dirty = false;
+
+        if n == 0 {
+            return;
+        }
+
+        let mut i = 0;
+        while i < n {
+            let ev = &self.events[i];
+            let SeqEventKind::NoteOn {
+                key: raw_key,
+                track_index,
+                hand,
+                ..
+            } = ev.kind
+            else {
+                i += 1;
+                continue;
+            };
+            let Some(key) = self.apply_transpose(raw_key) else {
+                i += 1;
+                continue;
+            };
+            if !self.is_right_hand_note(key, track_index, hand) {
+                i += 1;
+                continue;
+            }
+
+            let group_end = ev.time_sec + CHORD_WINDOW_SEC;
+            let mut chord_top_midi = key;
+            let mut j = i + 1;
+
+            while j < n && self.events[j].time_sec <= group_end {
+                if let SeqEventKind::NoteOn {
+                    key: raw_ck,
+                    track_index: ctrack,
+                    hand: chand,
+                    ..
+                } = self.events[j].kind
+                {
+                    if let Some(ck) = self.apply_transpose(raw_ck) {
+                        if self.is_right_hand_note(ck, ctrack, chand) && ck > chord_top_midi {
+                            chord_top_midi = ck;
+                        }
+                    }
+                }
+                j += 1;
+            }
+
+            for k in i..j {
+                if let SeqEventKind::NoteOn {
+                    key: raw_mk,
+                    track_index: mtrack,
+                    hand: mhand,
+                    ..
+                } = self.events[k].kind
+                {
+                    if let Some(mk) = self.apply_transpose(raw_mk) {
+                        if mk == chord_top_midi && self.is_right_hand_note(mk, mtrack, mhand) {
+                            self.melody_mask[k] = true;
+                        }
+                    }
+                }
+            }
+
+            i = j;
+        }
+    }
+
+    #[inline]
+    fn ensure_melody_mask(&mut self) {
+        if self.study_melody_only
+            && (self.melody_mask_dirty || self.melody_mask.len() != self.events.len())
+        {
+            self.recompute_melody_mask();
+        }
+    }
+
+    pub fn set_study_mode(
+        &mut self,
+        enabled: bool,
+        wait_right: bool,
+        wait_left: bool,
+        melody_only: bool,
+        mute_harmony_audio: bool,
+    ) {
+        let melody_only = melody_only && wait_right && !wait_left;
         self.study_mode = enabled;
         self.study_wait_right = wait_right;
         self.study_wait_left = wait_left;
+        self.study_melody_only = melody_only;
+        self.mute_melody_harmony_audio = melody_only && mute_harmony_audio;
+        self.ensure_melody_mask();
         if !enabled {
             self.clear_wait_state();
             return;
@@ -148,6 +270,17 @@ impl Sequencer {
                         self.waiting_keys[k] = false;
                         self.waiting_keys_hand[k] = 0;
                         changed = true;
+                    }
+                }
+            }
+            if melody_only {
+                if let Some(max_k) = (0..128).rev().find(|&k| self.waiting_keys[k]) {
+                    for k in 0..max_k {
+                        if self.waiting_keys[k] {
+                            self.waiting_keys[k] = false;
+                            self.waiting_keys_hand[k] = 0;
+                            changed = true;
+                        }
                     }
                 }
             }
@@ -236,6 +369,21 @@ impl Sequencer {
     }
 
     #[inline]
+    pub fn is_required_in_study_at(
+        &self,
+        event_idx: usize,
+        key: u8,
+        track_index: u32,
+        default_hand: u8,
+    ) -> Option<u8> {
+        let req = self.is_required_in_study(key, track_index, default_hand)?;
+        if self.study_melody_only && !self.melody_mask.get(event_idx).copied().unwrap_or(true) {
+            return None;
+        }
+        Some(req)
+    }
+
+    #[inline]
     pub fn is_note_audible(&self, key: u8, track_index: u32, default_hand: u8) -> bool {
         if !self.use_split_point
             && matches!(self.track_hands.get(&track_index), Some(HandRole::None))
@@ -248,6 +396,26 @@ impl Sequencer {
         } else {
             self.left_hand_enabled
         }
+    }
+
+    #[inline]
+    pub fn is_note_audible_at(
+        &self,
+        event_idx: usize,
+        key: u8,
+        track_index: u32,
+        default_hand: u8,
+    ) -> bool {
+        if !self.is_note_audible(key, track_index, default_hand) {
+            return false;
+        }
+        if self.study_melody_only && self.mute_melody_harmony_audio {
+            let is_right = self.resolve_is_right(key, track_index, default_hand);
+            if is_right && !self.melody_mask.get(event_idx).copied().unwrap_or(true) {
+                return false;
+            }
+        }
+        true
     }
 
     pub fn resolve_is_right(&self, key: u8, track_index: u32, default_hand: u8) -> bool {
@@ -276,6 +444,18 @@ impl Sequencer {
             return;
         }
 
+        self.ensure_melody_mask();
+
+        // Flush any accompaniment / harmony notes deferred when Study Mode froze on a chord
+        if !self.deferred_accompaniment.is_empty() {
+            let pending = std::mem::take(&mut self.deferred_accompaniment);
+            for (k, vel, track, hand, ev_idx) in pending {
+                if self.is_note_audible_at(ev_idx, k, track, hand) {
+                    backend.note_on(0, k as i32, vel as i32);
+                }
+            }
+        }
+
         let dt_song = (left.len() as f64 / sample_rate) * self.tempo_scale;
         let next_time = self.song_time_sec + dt_song;
 
@@ -293,25 +473,45 @@ impl Sequencer {
                         self.cursor += 1;
                         continue;
                     };
-                    if let Some(_req_hand) = self.is_required_in_study(key, track_index, hand) {
-                        let k_idx = key as usize;
-                        if k_idx < 128
-                            && self.recent_live_hits[k_idx] >= 0.0
-                            && (ev.time_sec - self.recent_live_hits[k_idx]).abs()
-                                <= EARLY_HIT_WINDOW_SEC
-                        {
-                            self.recent_live_hits[k_idx] = -1.0;
-                            self.cursor += 1;
-                            continue;
-                        }
 
-                        // Enter Wait State at t_target and group all required NoteOns in [t_target, t_target + CHORD_WINDOW_SEC]
-                        let t_target = ev.time_sec;
-                        let group_end = t_target + CHORD_WINDOW_SEC;
+                    let t_target = ev.time_sec;
+                    let group_end = t_target + CHORD_WINDOW_SEC;
+                    let mut group_has_required = self
+                        .is_required_in_study_at(self.cursor, key, track_index, hand)
+                        .is_some();
+
+                    if !group_has_required && self.study_mode && !self.preview_bypass_study {
+                        let mut scan = self.cursor + 1;
+                        while scan < self.events.len() && self.events[scan].time_sec <= group_end {
+                            if let SeqEventKind::NoteOn {
+                                key: raw_sk,
+                                track_index: strack,
+                                hand: shand,
+                                ..
+                            } = self.events[scan].kind
+                            {
+                                if let Some(sk) = self.apply_transpose(raw_sk) {
+                                    if self
+                                        .is_required_in_study_at(scan, sk, strack, shand)
+                                        .is_some()
+                                    {
+                                        group_has_required = true;
+                                        break;
+                                    }
+                                }
+                            }
+                            scan += 1;
+                        }
+                    }
+
+                    if group_has_required {
+                        let mut group_deferred: Vec<(u8, u8, u32, u8, usize)> = Vec::new();
+
                         while self.cursor < self.events.len()
                             && self.events[self.cursor].time_sec <= group_end
                         {
-                            let g_ev = &self.events[self.cursor];
+                            let cur_idx = self.cursor;
+                            let g_ev = &self.events[cur_idx];
                             match g_ev.kind {
                                 SeqEventKind::NoteOn {
                                     key: raw_gk,
@@ -320,9 +520,9 @@ impl Sequencer {
                                     hand: ghand,
                                 } => {
                                     if let Some(gk) = self.apply_transpose(raw_gk) {
-                                        if let Some(g_req_hand) =
-                                            self.is_required_in_study(gk, gtrack, ghand)
-                                        {
+                                        if let Some(g_req_hand) = self.is_required_in_study_at(
+                                            cur_idx, gk, gtrack, ghand,
+                                        ) {
                                             let gk_idx = gk as usize;
                                             if gk_idx < 128
                                                 && self.recent_live_hits[gk_idx] >= 0.0
@@ -335,14 +535,23 @@ impl Sequencer {
                                                 self.waiting_keys[gk_idx] = true;
                                                 self.waiting_keys_hand[gk_idx] = g_req_hand;
                                             }
-                                        } else if self.is_note_audible(gk, gtrack, ghand) {
+                                        } else if self.is_note_audible_at(
+                                            cur_idx, gk, gtrack, ghand,
+                                        ) {
                                             let shaped_vel = shape_velocity(gvel, self.touch);
-                                            backend.note_on(0, gk as i32, shaped_vel as i32);
+                                            group_deferred.push((
+                                                gk,
+                                                shaped_vel,
+                                                gtrack,
+                                                ghand,
+                                                cur_idx,
+                                            ));
                                         }
                                     }
                                 }
                                 SeqEventKind::NoteOff { key: raw_gk, .. } => {
                                     if let Some(gk) = self.apply_transpose(raw_gk) {
+                                        group_deferred.retain(|&(dk, ..)| dk != gk);
                                         backend.note_off(0, gk as i32);
                                     }
                                 }
@@ -354,6 +563,7 @@ impl Sequencer {
                         }
 
                         if self.waiting_keys.iter().any(|&w| w) {
+                            self.deferred_accompaniment.extend(group_deferred);
                             self.song_time_sec = t_target;
                             self.is_waiting = true;
                             self.wait_state_version += 1;
@@ -361,10 +571,14 @@ impl Sequencer {
                             self.apply_volume(left, right);
                             return;
                         }
+
+                        for (dk, dvel, ..) in group_deferred {
+                            backend.note_on(0, dk as i32, dvel as i32);
+                        }
                         continue;
                     }
 
-                    if self.is_note_audible(key, track_index, hand) {
+                    if self.is_note_audible_at(self.cursor, key, track_index, hand) {
                         let shaped_vel = shape_velocity(velocity, self.touch);
                         backend.note_on(0, key as i32, shaped_vel as i32);
                     }
@@ -644,7 +858,7 @@ mod tests {
         }];
         seq.duration_sec = 5.0;
         seq.is_playing = true;
-        seq.set_study_mode(true, true, true);
+        seq.set_study_mode(true, true, true, false, false);
 
         let mut left = vec![0.0f32; 1000]; // 1.0s at 1000Hz
         let mut right = vec![0.0f32; 1000];
@@ -706,7 +920,7 @@ mod tests {
         ];
         seq.duration_sec = 5.0;
         seq.is_playing = true;
-        seq.set_study_mode(true, true, true);
+        seq.set_study_mode(true, true, true, false, false);
 
         let mut left = vec![0.0f32; 1000];
         let mut right = vec![0.0f32; 1000];
@@ -750,7 +964,7 @@ mod tests {
         ];
         seq.duration_sec = 5.0;
         seq.is_playing = true;
-        seq.set_study_mode(true, true, false); // Right-only
+        seq.set_study_mode(true, true, false, false, false); // Right-only
 
         let mut left = vec![0.0f32; 500]; // 0.5s at 1000Hz
         let mut right = vec![0.0f32; 500];
@@ -784,7 +998,7 @@ mod tests {
         }];
         seq.duration_sec = 5.0;
         seq.is_playing = true;
-        seq.set_study_mode(true, true, true);
+        seq.set_study_mode(true, true, true, false, false);
         seq.song_time_sec = 0.42; // 80ms before 0.5s
 
         // Player hits key 60 80ms early (within 150ms forgiveness window)
@@ -814,7 +1028,7 @@ mod tests {
         }];
         seq.duration_sec = 5.0;
         seq.is_playing = true;
-        seq.set_study_mode(true, true, true);
+        seq.set_study_mode(true, true, true, false, false);
 
         let mut left = vec![0.0f32; 500];
         let mut right = vec![0.0f32; 500];
@@ -825,16 +1039,16 @@ mod tests {
         assert!(seq.waiting_keys[48]);
 
         // Switching to Right-Only drops the Left-hand wait immediately
-        seq.set_study_mode(true, true, false);
+        seq.set_study_mode(true, true, false, false, false);
         assert!(!seq.is_waiting);
         assert!(!seq.waiting_keys[48]);
 
         // Re-wait and test turning study mode off
         seq.seek(0.0);
-        seq.set_study_mode(true, true, true);
+        seq.set_study_mode(true, true, true, false, false);
         seq.render_block(&mut mock, &mut left, &mut right, 1000.0);
         assert!(seq.is_waiting);
-        seq.set_study_mode(false, true, true);
+        seq.set_study_mode(false, true, true, false, false);
         assert!(!seq.is_waiting);
     }
 
@@ -863,7 +1077,7 @@ mod tests {
         ];
         seq.duration_sec = 5.0;
         seq.is_playing = true;
-        seq.set_study_mode(true, true, true);
+        seq.set_study_mode(true, true, true, false, false);
         seq.set_study_range(true, 53, 84);
 
         let mut left = vec![0.0f32; 200]; // 0.0 -> 0.2s
@@ -900,7 +1114,7 @@ mod tests {
         }];
         seq.duration_sec = 5.0;
         seq.is_playing = true;
-        seq.set_study_mode(true, true, true);
+        seq.set_study_mode(true, true, true, false, false);
         seq.set_study_range(false, 53, 84);
 
         let mut left = vec![0.0f32; 500];
@@ -953,7 +1167,7 @@ mod tests {
 
         // Now verify Study Mode waits on transposed key 62
         seq.seek(0.0);
-        seq.set_study_mode(true, true, true);
+        seq.set_study_mode(true, true, true, false, false);
         mock.notes_on.clear();
         seq.render_block(&mut mock, &mut left, &mut right, 1000.0);
         assert!(seq.is_waiting);
@@ -962,5 +1176,302 @@ mod tests {
 
         seq.on_live_note_on(62);
         assert!(!seq.is_waiting);
+    }
+
+    #[test]
+    fn test_study_mode_melody_only_waits_only_for_top_note() {
+        let mut seq = Sequencer::new();
+        seq.events = vec![
+            SeqEvent {
+                time_sec: 0.50,
+                kind: SeqEventKind::NoteOn {
+                    key: 60,
+                    velocity: 90,
+                    track_index: 0,
+                    hand: 0,
+                },
+            },
+            SeqEvent {
+                time_sec: 0.52,
+                kind: SeqEventKind::NoteOn {
+                    key: 64,
+                    velocity: 95,
+                    track_index: 0,
+                    hand: 0,
+                },
+            },
+            SeqEvent {
+                time_sec: 0.54,
+                kind: SeqEventKind::NoteOn {
+                    key: 67,
+                    velocity: 100,
+                    track_index: 0,
+                    hand: 0,
+                },
+            },
+            // Next melody step outside 45ms window
+            SeqEvent {
+                time_sec: 0.70,
+                kind: SeqEventKind::NoteOn {
+                    key: 69,
+                    velocity: 100,
+                    track_index: 0,
+                    hand: 0,
+                },
+            },
+        ];
+        seq.duration_sec = 5.0;
+        seq.is_playing = true;
+        seq.set_study_mode(true, true, false, true, false);
+
+        let mut left = vec![0.0f32; 1000];
+        let mut right = vec![0.0f32; 1000];
+        let mut mock = MockBackend::new();
+
+        seq.render_block(&mut mock, &mut left, &mut right, 1000.0);
+        assert!(seq.is_waiting);
+        assert_eq!(seq.song_time_sec, 0.50);
+        assert!(!seq.waiting_keys[60]);
+        assert!(!seq.waiting_keys[64]);
+        assert!(seq.waiting_keys[67]);
+        assert!(!seq.waiting_keys[69]);
+        // Inner harmony notes are deferred while waiting so they don't fire ahead of the melody keypress
+        assert!(mock.notes_on.is_empty());
+
+        // Pressing only the top note (67) unblocks immediately and fires deferred harmony on resume
+        seq.on_live_note_on(67);
+        assert!(!seq.is_waiting);
+
+        let mut small_left = vec![0.0f32; 50]; // 0.50 -> 0.55s
+        let mut small_right = vec![0.0f32; 50];
+        seq.render_block(&mut mock, &mut small_left, &mut small_right, 1000.0);
+        let played_keys: Vec<i32> = mock.notes_on.iter().map(|n| n.1).collect();
+        assert_eq!(played_keys, vec![60, 64]);
+    }
+
+    #[test]
+    fn test_study_mode_melody_only_early_hit_forgiveness() {
+        let mut seq = Sequencer::new();
+        seq.events = vec![
+            SeqEvent {
+                time_sec: 0.50,
+                kind: SeqEventKind::NoteOn {
+                    key: 60,
+                    velocity: 90,
+                    track_index: 0,
+                    hand: 0,
+                },
+            },
+            SeqEvent {
+                time_sec: 0.53,
+                kind: SeqEventKind::NoteOn {
+                    key: 67,
+                    velocity: 100,
+                    track_index: 0,
+                    hand: 0,
+                },
+            },
+        ];
+        seq.duration_sec = 5.0;
+        seq.is_playing = true;
+        seq.set_study_mode(true, true, false, true, false);
+        seq.song_time_sec = 0.45;
+
+        // Player hits the top note 67 early (within 150ms forgiveness window)
+        seq.on_live_note_on(67);
+
+        let mut left = vec![0.0f32; 500];
+        let mut right = vec![0.0f32; 500];
+        let mut mock = MockBackend::new();
+
+        seq.render_block(&mut mock, &mut left, &mut right, 1000.0);
+        assert!(!seq.is_waiting);
+        assert!((seq.song_time_sec - 0.95).abs() < 1e-6);
+        // Harmony note 60 plays, top note 67 is not double-triggered
+        let played_keys: Vec<i32> = mock.notes_on.iter().map(|n| n.1).collect();
+        assert_eq!(played_keys, vec![60]);
+    }
+
+    #[test]
+    fn test_study_mode_melody_only_toggle_mid_wait_unblocks_lower_keys() {
+        let mut seq = Sequencer::new();
+        seq.events = vec![
+            SeqEvent {
+                time_sec: 0.20,
+                kind: SeqEventKind::NoteOn {
+                    key: 60,
+                    velocity: 90,
+                    track_index: 0,
+                    hand: 0,
+                },
+            },
+            SeqEvent {
+                time_sec: 0.21,
+                kind: SeqEventKind::NoteOn {
+                    key: 67,
+                    velocity: 100,
+                    track_index: 0,
+                    hand: 0,
+                },
+            },
+        ];
+        seq.duration_sec = 5.0;
+        seq.is_playing = true;
+        seq.set_study_mode(true, true, false, false, false);
+
+        let mut left = vec![0.0f32; 500];
+        let mut right = vec![0.0f32; 500];
+        let mut mock = MockBackend::new();
+
+        seq.render_block(&mut mock, &mut left, &mut right, 1000.0);
+        assert!(seq.is_waiting);
+        assert!(seq.waiting_keys[60] && seq.waiting_keys[67]);
+
+        // Enabling melody_only while paused on a chord drops lower waiting keys
+        seq.set_study_mode(true, true, false, true, false);
+        assert!(seq.is_waiting);
+        assert!(!seq.waiting_keys[60]);
+        assert!(seq.waiting_keys[67]);
+    }
+
+    #[test]
+    fn test_study_mode_melody_only_out_of_range_top_note_does_not_fallback_to_inner_note() {
+        let mut seq = Sequencer::new();
+        seq.events = vec![
+            SeqEvent {
+                time_sec: 0.20,
+                kind: SeqEventKind::NoteOn {
+                    key: 76, // E5 (in range 48..=79) - inner harmony note
+                    velocity: 90,
+                    track_index: 0,
+                    hand: 0,
+                },
+            },
+            SeqEvent {
+                time_sec: 0.21,
+                kind: SeqEventKind::NoteOn {
+                    key: 86, // D6 (out of range 48..=79) - true melody top note
+                    velocity: 100,
+                    track_index: 0,
+                    hand: 0,
+                },
+            },
+        ];
+        seq.duration_sec = 5.0;
+        seq.is_playing = true;
+        seq.set_study_range(true, 48, 79);
+        seq.set_study_mode(true, true, false, true, false);
+
+        let mut left = vec![0.0f32; 500];
+        let mut right = vec![0.0f32; 500];
+        let mut mock = MockBackend::new();
+
+        seq.render_block(&mut mock, &mut left, &mut right, 1000.0);
+        // True top note (86) is out of range, so Study Mode skips the chord instead of freezing on dimmed E5 (76)
+        assert!(!seq.is_waiting);
+        assert!(!seq.waiting_keys[76]);
+    }
+
+    #[test]
+    fn test_study_mode_melody_only_sustained_note_does_not_suppress_descending_melody() {
+        let mut seq = Sequencer::new();
+        seq.events = vec![
+            // G5 (79) with baked sustain-pedal ring 0.10 .. 1.50
+            SeqEvent {
+                time_sec: 0.10,
+                kind: SeqEventKind::NoteOn {
+                    key: 79,
+                    velocity: 100,
+                    track_index: 0,
+                    hand: 0,
+                },
+            },
+            // Descending melody F#5 (78) at 0.30 while G5 is still ringing
+            SeqEvent {
+                time_sec: 0.30,
+                kind: SeqEventKind::NoteOn {
+                    key: 78,
+                    velocity: 100,
+                    track_index: 0,
+                    hand: 0,
+                },
+            },
+            // Descending melody E5 (76) at 0.50 while G5 is still ringing
+            SeqEvent {
+                time_sec: 0.50,
+                kind: SeqEventKind::NoteOn {
+                    key: 76,
+                    velocity: 100,
+                    track_index: 0,
+                    hand: 0,
+                },
+            },
+            SeqEvent {
+                time_sec: 1.50,
+                kind: SeqEventKind::NoteOff {
+                    key: 79,
+                    track_index: 0,
+                    hand: 0,
+                },
+            },
+        ];
+        seq.duration_sec = 5.0;
+        seq.is_playing = true;
+        seq.set_study_mode(true, true, false, true, false);
+
+        let mut left = vec![0.0f32; 200]; // 0.2s per block
+        let mut right = vec![0.0f32; 200];
+        let mut mock = MockBackend::new();
+
+        // 0.0 -> 0.2: freezes on G5 (79)
+        seq.render_block(&mut mock, &mut left, &mut right, 1000.0);
+        assert!(seq.is_waiting && seq.waiting_keys[79]);
+        seq.on_live_note_on(79);
+
+        // 0.1 -> 0.3 -> 0.5: must pause on F#5 (78) even though G5 hasn't NoteOff'd yet
+        seq.render_block(&mut mock, &mut left, &mut right, 1000.0);
+        assert!(seq.is_waiting && seq.waiting_keys[78]);
+        seq.on_live_note_on(78);
+
+        // Next block: must pause on E5 (76)
+        seq.render_block(&mut mock, &mut left, &mut right, 1000.0);
+        assert!(seq.is_waiting && seq.waiting_keys[76]);
+    }
+
+    #[test]
+    fn test_melody_only_mutes_inner_harmony_when_accompaniment_muted() {
+        let mut seq = Sequencer::new();
+        seq.events = vec![
+            SeqEvent {
+                time_sec: 0.10,
+                kind: SeqEventKind::NoteOn {
+                    key: 60,
+                    velocity: 90,
+                    track_index: 0,
+                    hand: 0,
+                },
+            },
+            SeqEvent {
+                time_sec: 0.10,
+                kind: SeqEventKind::NoteOn {
+                    key: 67,
+                    velocity: 100,
+                    track_index: 0,
+                    hand: 0,
+                },
+            },
+        ];
+        seq.duration_sec = 5.0;
+        seq.is_playing = true;
+        // Study Mode OFF, Melody Only ON, mute_harmony_audio ON
+        seq.set_study_mode(false, true, false, true, true);
+
+        let mut left = vec![0.0f32; 500];
+        let mut right = vec![0.0f32; 500];
+        let mut mock = MockBackend::new();
+
+        seq.render_block(&mut mock, &mut left, &mut right, 1000.0);
+        let played_keys: Vec<i32> = mock.notes_on.iter().map(|n| n.1).collect();
+        assert_eq!(played_keys, vec![67]);
     }
 }

@@ -176,11 +176,15 @@ pub fn audio_set_study_mode(
     enabled: bool,
     wait_right: bool,
     wait_left: bool,
+    melody_only: bool,
+    mute_harmony_audio: bool,
 ) -> Result<(), String> {
     engine.send(AudioCommand::SetStudyMode {
         enabled,
         wait_right,
         wait_left,
+        melody_only,
+        mute_harmony_audio,
     })
 }
 

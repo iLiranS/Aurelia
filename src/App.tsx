@@ -181,10 +181,14 @@ export const App: React.FC = () => {
           usePlaybackStore.getState().hydrateLiveVolume(savedLiveVolume);
         }
 
-        // Hydrate saved count-in bars from SQLite
+        // Hydrate saved count-in bars and melody-only preference from SQLite
         const savedCountIn = await getAppSetting("count_in_bars_v1");
         if (savedCountIn !== null) {
           usePlaybackStore.getState().hydrateCountInBars(savedCountIn);
+        }
+        const savedMelodyOnly = await getAppSetting("melody_only_v1");
+        if (savedMelodyOnly !== null) {
+          usePlaybackStore.getState().hydrateMelodyOnly(savedMelodyOnly);
         }
 
         // Hydrate active soundfont and discover available soundfonts

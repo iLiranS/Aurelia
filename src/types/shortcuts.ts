@@ -13,6 +13,7 @@ export type ShortcutActionId =
   | "hands.toggleLeft"
   | "hands.toggleRight"
   | "practice.studyMode"
+  | "practice.melodyOnly"
   | "midi.octaveDown"
   | "midi.octaveUp"
   | "view.library"
@@ -132,6 +133,13 @@ export const SHORTCUT_DEFINITIONS: ShortcutDefinition[] = [
     label: "Toggle Study Mode",
     description: "Pause waterfall at hit line until you play the expected notes",
     defaultBinding: "W",
+  },
+  {
+    id: "practice.melodyOnly",
+    category: "Practice",
+    label: "Toggle Melody Only",
+    description: "Dim inner chord notes and wait only for the top melody note",
+    defaultBinding: "M",
   },
   {
     id: "midi.octaveDown",

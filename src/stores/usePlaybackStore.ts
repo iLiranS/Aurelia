@@ -46,6 +46,7 @@ interface PlaybackState {
   displayTimeSec: number;
   muteInactiveHandAudio: boolean;
   studyMode: boolean;
+  melodyOnly: boolean;
   isWaitingForInput: boolean;
   countInBars: 0 | 1 | 2;
   countInBeat: { beat: number; totalRemaining: number; beatsPerBar: number } | null;
@@ -67,6 +68,9 @@ interface PlaybackState {
   toggleMuteInactiveHandAudio: () => void;
   setStudyMode: (enabled: boolean) => void;
   toggleStudyMode: () => void;
+  setMelodyOnly: (enabled: boolean) => void;
+  toggleMelodyOnly: () => void;
+  hydrateMelodyOnly: (rawValue: string) => void;
   setIsWaitingForInput: (waiting: boolean) => void;
   setTrackHands: (mapping: Record<number, HandRole>) => void;
   setSplitPointMidi: (splitMidi: number) => void;
@@ -102,6 +106,7 @@ export const usePlaybackStore = create<PlaybackState>((set) => ({
   displayTimeSec: 0,
   muteInactiveHandAudio: false,
   studyMode: false,
+  melodyOnly: false,
   isWaitingForInput: false,
   countInBars: 0,
   countInBeat: null,
@@ -145,6 +150,26 @@ export const usePlaybackStore = create<PlaybackState>((set) => ({
     set((state) => ({ muteInactiveHandAudio: !state.muteInactiveHandAudio })),
   setStudyMode: (studyMode) => set({ studyMode }),
   toggleStudyMode: () => set((state) => ({ studyMode: !state.studyMode })),
+  setMelodyOnly: (melodyOnly) =>
+    set((state) => {
+      if (melodyOnly && !(state.rightHandActive && !state.leftHandActive)) {
+        return state;
+      }
+      setAppSetting("melody_only_v1", melodyOnly ? "1" : "0").catch(() => {});
+      return { melodyOnly };
+    }),
+  toggleMelodyOnly: () =>
+    set((state) => {
+      if (!(state.rightHandActive && !state.leftHandActive)) {
+        return state;
+      }
+      const next = !state.melodyOnly;
+      setAppSetting("melody_only_v1", next ? "1" : "0").catch(() => {});
+      return { melodyOnly: next };
+    }),
+  hydrateMelodyOnly: (rawValue) => {
+    set({ melodyOnly: rawValue === "1" || rawValue === "true" });
+  },
   setIsWaitingForInput: (isWaitingForInput) => set({ isWaitingForInput }),
   setTrackHands: (trackHands) => set({ trackHands }),
   setSplitPointMidi: (splitPointMidi) => set({ splitPointMidi }),

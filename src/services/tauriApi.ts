@@ -150,10 +150,18 @@ export async function audioLiveAllNotesOff(): Promise<void> {
 export async function audioSetStudyMode(
   enabled: boolean,
   waitRight: boolean,
-  waitLeft: boolean
+  waitLeft: boolean,
+  melodyOnly: boolean = false,
+  muteHarmonyAudio: boolean = false
 ): Promise<void> {
   if (!isTauri) return;
-  await invoke("audio_set_study_mode", { enabled, waitRight, waitLeft });
+  await invoke("audio_set_study_mode", {
+    enabled,
+    waitRight,
+    waitLeft,
+    melodyOnly,
+    muteHarmonyAudio,
+  });
 }
 
 export async function audioSetStudyRange(

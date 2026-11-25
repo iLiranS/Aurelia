@@ -1,5 +1,5 @@
 import React from "react";
-import { Split, Music2, Volume2, VolumeX, GraduationCap } from "lucide-react";
+import { Split, Music2, Volume2, VolumeX, GraduationCap, Sparkles } from "lucide-react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { Switch } from "@/components/ui/switch";
@@ -26,6 +26,9 @@ export const HandControlsPopover: React.FC = () => {
   const studyMode = usePlaybackStore((s) => s.studyMode);
   const setStudyMode = usePlaybackStore((s) => s.setStudyMode);
 
+  const melodyOnly = usePlaybackStore((s) => s.melodyOnly);
+  const setMelodyOnly = usePlaybackStore((s) => s.setMelodyOnly);
+
   const trackHands = usePlaybackStore((s) => s.trackHands);
   const setTrackHands = usePlaybackStore((s) => s.setTrackHands);
 
@@ -44,6 +47,8 @@ export const HandControlsPopover: React.FC = () => {
   };
 
   const hasBothRole = Object.values(trackHands).some((r) => r === "both");
+  const isRightHandOnly = rightHandActive && !leftHandActive;
+  const effectiveMelodyOnly = melodyOnly && isRightHandOnly;
 
   const splitKeySlider = (
     <div className="p-2 rounded-lg bg-black/30 border border-white/[0.08] space-y-2 animate-in fade-in-50 duration-200">
@@ -75,7 +80,7 @@ export const HandControlsPopover: React.FC = () => {
           <PopoverTrigger asChild>
             <button
               className={`h-6 px-2 rounded-full flex items-center justify-center gap-1.5 transition-all cursor-pointer shrink-0 ${
-                studyMode ? "liquid-glass-accent text-zinc-100" : "liquid-glass-dock-btn"
+                studyMode || effectiveMelodyOnly ? "liquid-glass-accent text-zinc-100" : "liquid-glass-dock-btn"
               }`}
               aria-label="Practice Hands Settings"
             >
@@ -99,6 +104,9 @@ export const HandControlsPopover: React.FC = () => {
                 />
               </div>
 
+              {effectiveMelodyOnly && (
+                <Sparkles className="w-3 h-3 text-primary shrink-0" />
+              )}
               {studyMode && (
                 <GraduationCap className="w-3 h-3 text-primary shrink-0" />
               )}
@@ -186,17 +194,42 @@ export const HandControlsPopover: React.FC = () => {
               <span>Study Mode</span>
             </div>
             <p className="text-[10px] text-zinc-400 leading-tight">
-              {leftHandActive && rightHandActive
-                ? "Waits for both hands"
-                : rightHandActive && !leftHandActive
-                  ? "Waits for right hand only"
-                  : leftHandActive && !rightHandActive
-                    ? "Waits for left hand only"
-                    : "No practiced hand selected"}
+              {!leftHandActive && !rightHandActive
+                ? "No practiced hand selected"
+                : effectiveMelodyOnly
+                  ? "Waits for right hand top note only"
+                  : leftHandActive && rightHandActive
+                    ? "Waits for both hands"
+                    : rightHandActive
+                      ? "Waits for right hand only"
+                      : "Waits for left hand only"}
             </p>
           </div>
           <Switch checked={studyMode} onCheckedChange={setStudyMode} />
         </div>
+
+        {/* Melody Only (Top Note) Toggle — Right Hand Only */}
+        {isRightHandOnly && (
+          <div className="p-2 rounded-lg bg-white/[0.03] border border-white/[0.08] flex items-center justify-between gap-2 animate-in fade-in-50 duration-200">
+            <div className="space-y-0.5 min-w-0">
+              <div className="flex items-center gap-1.5 text-[11px] font-medium text-zinc-200">
+                <Sparkles
+                  className={`w-3.5 h-3.5 ${melodyOnly ? "text-primary" : "text-zinc-400"}`}
+                />
+                <span>Melody Only</span>
+                <span className="text-[9px] px-1.5 py-0.5 rounded bg-white/[0.06] text-zinc-400 font-normal">
+                  Top Note
+                </span>
+              </div>
+              <p className="text-[10px] text-zinc-400 leading-tight">
+                {melodyOnly
+                  ? "Harmony notes dimmed; Study waits for top note"
+                  : "Dim inner chord notes to focus on the melody"}
+              </p>
+            </div>
+            <Switch checked={melodyOnly} onCheckedChange={setMelodyOnly} />
+          </div>
+        )}
 
         {/* Option to hear both hands even when focusing on one */}
         {(!leftHandActive || !rightHandActive) && (
@@ -212,8 +245,12 @@ export const HandControlsPopover: React.FC = () => {
               </div>
               <p className="text-[10px] text-zinc-400 leading-tight">
                 {muteInactiveHandAudio
-                  ? "Inactive hand audio is silenced"
-                  : "Inactive hand audio still plays while visually dimmed"}
+                  ? effectiveMelodyOnly
+                    ? "Dimmed left hand & harmony notes are silenced"
+                    : "Inactive hand audio is silenced"
+                  : effectiveMelodyOnly
+                    ? "Dimmed left hand & harmony notes still play"
+                    : "Inactive hand audio still plays while visually dimmed"}
               </p>
             </div>
             <Switch

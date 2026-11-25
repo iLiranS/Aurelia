@@ -9,6 +9,7 @@ import { playbackClock } from "@/engine/playbackClock";
 import { activeNotes } from "@/engine/activeNotes";
 import { freeplayNotes } from "@/engine/freeplayNotes";
 import { getKeyByMidi, resolveNoteHand } from "@/engine/pianoLayout";
+import { getCachedMelodyMask } from "@/engine/melodyFilter";
 import { createNoteShaderMaterial } from "./noteShader";
 import type { MidiNote } from "@/types/midi";
 
@@ -220,6 +221,7 @@ export const FallingNotes: React.FC = () => {
     const {
       rightHandActive,
       leftHandActive,
+      melodyOnly,
       trackHands,
       splitPointMidi,
       useSplitPoint,
@@ -235,6 +237,18 @@ export const FallingNotes: React.FC = () => {
     }
 
     const notes = activeSong.notes;
+    const effectiveMelodyOnly = melodyOnly && rightHandActive && !leftHandActive;
+    const melodyMask = effectiveMelodyOnly
+      ? getCachedMelodyMask(
+          notes,
+          rightHandActive,
+          leftHandActive,
+          trackHands,
+          splitPointMidi,
+          useSplitPoint,
+          transposeSemitones
+        )
+      : null;
 
     // Search window: notes starting up to 20s prior to now (for long sustained notes)
     const startIndex = findStartIndex(notes, Math.max(0, now - 20));
@@ -270,9 +284,10 @@ export const FallingNotes: React.FC = () => {
       const isHandActive =
         (hand === "right" && rightHandActive) ||
         (hand === "left" && leftHandActive);
+      const isNoteFocused = isHandActive && (!melodyMask || melodyMask[i] === 1);
 
       // Active key hit registration (when note is striking the hit line right now)
-      if (note.startSec <= now && noteEndSec >= now && isHandActive) {
+      if (note.startSec <= now && noteEndSec >= now && isNoteFocused) {
         const keyIdx = shiftedMidi - 21;
         if (keyIdx >= 0 && keyIdx < 88) {
           activeNotes.songHand[keyIdx] = hand === "right" ? 1 : 2;
@@ -301,7 +316,7 @@ export const FallingNotes: React.FC = () => {
         visibleBottom,
         visibleTop,
         hand === "right" ? 1 : 2,
-        isHandActive,
+        isNoteFocused,
         isStrikingHitLine,
         false
       );

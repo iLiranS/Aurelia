@@ -263,7 +263,8 @@ export function useGlobalShortcuts(): void {
         matchedAction.startsWith("tempo.") ||
         matchedAction.startsWith("loop.") ||
         matchedAction.startsWith("hands.") ||
-        matchedAction === "practice.studyMode";
+        matchedAction === "practice.studyMode" ||
+        matchedAction === "practice.melodyOnly";
 
       if (isSongOnlyAction && viewMode !== "song") {
         return;
@@ -419,6 +420,13 @@ export function useGlobalShortcuts(): void {
 
         case "practice.studyMode": {
           playback.toggleStudyMode();
+          break;
+        }
+
+        case "practice.melodyOnly": {
+          if (playback.rightHandActive && !playback.leftHandActive) {
+            playback.toggleMelodyOnly();
+          }
           break;
         }
 

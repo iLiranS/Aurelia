@@ -3,6 +3,7 @@ import * as THREE from "three";
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import { OrthographicCamera } from "@react-three/drei";
 import { FallingNotes } from "./FallingNotes";
+import { NoteHighlight } from "./NoteHighlight";
 import { MeasureLines } from "./MeasureLines";
 import { CountInOverlay } from "./CountInOverlay";
 import { ListPreviewDriver } from "./ListPreviewDriver";
@@ -762,6 +763,9 @@ export const PianoStage: React.FC = () => {
 
         {/* Active Hardware MIDI Range Veils & Boundary Brackets */}
         <ActiveRangeVeils />
+
+        {/* Pressed-Key Vertical God-Ray Highlights */}
+        <NoteHighlight />
 
         {/* Instanced Waterfall Notes */}
         <FallingNotes />

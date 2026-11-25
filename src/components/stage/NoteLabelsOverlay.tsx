@@ -6,6 +6,7 @@ import { usePlaybackStore } from "@/stores/usePlaybackStore";
 import { playbackClock } from "@/engine/playbackClock";
 import { freeplayNotes } from "@/engine/freeplayNotes";
 import { getKeyByMidi, resolveNoteHand } from "@/engine/pianoLayout";
+import { getCachedMelodyMask } from "@/engine/melodyFilter";
 import type { MidiNote } from "@/types/midi";
 
 const BASE_LETTERS = ["C", "C", "D", "D", "E", "F", "F", "G", "G", "A", "A", "B"];
@@ -165,6 +166,7 @@ const NoteLabelsCanvas: React.FC = () => {
       const {
         rightHandActive,
         leftHandActive,
+        melodyOnly,
         trackHands,
         splitPointMidi,
         useSplitPoint,
@@ -172,6 +174,18 @@ const NoteLabelsCanvas: React.FC = () => {
       } = usePlaybackStore.getState();
 
       const notes = activeSong.notes;
+      const effectiveMelodyOnly = melodyOnly && rightHandActive && !leftHandActive;
+      const melodyMask = effectiveMelodyOnly
+        ? getCachedMelodyMask(
+            notes,
+            rightHandActive,
+            leftHandActive,
+            trackHands,
+            splitPointMidi,
+            useSplitPoint,
+            transposeSemitones
+          )
+        : null;
       const startIndex = findStartIndex(notes, Math.max(0, now - 20));
 
       for (let i = startIndex; i < notes.length; i++) {
@@ -212,8 +226,10 @@ const NoteLabelsCanvas: React.FC = () => {
         const isHandActive =
           (hand === "right" && rightHandActive) ||
           (hand === "left" && leftHandActive);
+        const isNoteFocused =
+          isHandActive && (!melodyMask || melodyMask[i] === 1);
 
-        drawNoteLabel(shiftedMidi, visibleBottom, visibleTop, isHandActive);
+        drawNoteLabel(shiftedMidi, visibleBottom, visibleTop, isNoteFocused);
       }
     };
 

@@ -25,6 +25,7 @@ export function usePersistSongSettings(): void {
   const rightHandActive = usePlaybackStore((s) => s.rightHandActive);
   const leftHandActive = usePlaybackStore((s) => s.leftHandActive);
   const studyMode = usePlaybackStore((s) => s.studyMode);
+  const melodyOnly = usePlaybackStore((s) => s.melodyOnly);
   const muteInactiveHandAudio = usePlaybackStore((s) => s.muteInactiveHandAudio);
   const trackHands = usePlaybackStore((s) => s.trackHands);
   const splitPointMidi = usePlaybackStore((s) => s.splitPointMidi);
@@ -45,16 +46,24 @@ export function usePersistSongSettings(): void {
     }
   }, [activeSong]);
 
-  // Sync Study Mode state immediately to Rust audio engine
+  // Sync Study Mode & Melody Only state immediately to Rust audio engine
   useEffect(() => {
     if (!activeSong) return;
-    audioSetStudyMode(studyMode, rightHandActive, leftHandActive);
+    const effectiveMelodyOnly = melodyOnly && rightHandActive && !leftHandActive;
+    const muteHarmonyAudio = effectiveMelodyOnly && muteInactiveHandAudio;
+    audioSetStudyMode(
+      studyMode,
+      rightHandActive,
+      leftHandActive,
+      effectiveMelodyOnly,
+      muteHarmonyAudio
+    );
     if (!studyMode) {
       activeNotes.clearWaiting();
       playbackClock.setWaiting(false);
       usePlaybackStore.getState().setIsWaitingForInput(false);
     }
-  }, [activeSong, studyMode, rightHandActive, leftHandActive]);
+  }, [activeSong, studyMode, rightHandActive, leftHandActive, melodyOnly, muteInactiveHandAudio]);
 
   // Handle immediate audio sync and debounced SQLite persistence on user change
   useEffect(() => {

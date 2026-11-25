@@ -18,6 +18,7 @@ export interface AppearanceSettingsJson {
   lookaheadSec: number;
   showKeyLabels: boolean;
   showNoteLabels?: boolean;
+  noteHighlightEnabled?: boolean;
   qwertyPlayEnabled?: boolean;
   previewStartMode?: "peak" | "start";
   previewAudioEnabled?: boolean;
@@ -38,6 +39,7 @@ interface ThemeState {
   lookaheadSec: number;
   showKeyLabels: boolean;
   showNoteLabels: boolean;
+  noteHighlightEnabled: boolean;
   performanceMode: boolean;
   qwertyPlayEnabled: boolean;
   previewStartMode: "peak" | "start";
@@ -56,6 +58,7 @@ interface ThemeState {
   setLookaheadSec: (seconds: number) => void;
   setShowKeyLabels: (show: boolean) => void;
   setShowNoteLabels: (show: boolean) => void;
+  setNoteHighlightEnabled: (enabled: boolean) => void;
   setPerformanceMode: (perf: boolean) => void;
   togglePerformanceMode: () => void;
   setQwertyPlayEnabled: (enabled: boolean) => void;
@@ -83,6 +86,7 @@ function persistAppearanceDebounced(state: ThemeState) {
         lookaheadSec: state.lookaheadSec,
         showKeyLabels: state.showKeyLabels,
         showNoteLabels: state.showNoteLabels,
+        noteHighlightEnabled: state.noteHighlightEnabled,
         qwertyPlayEnabled: state.qwertyPlayEnabled,
         previewStartMode: state.previewStartMode,
         previewAudioEnabled: state.previewAudioEnabled,
@@ -109,6 +113,7 @@ export const useThemeStore = create<ThemeState>((set, get) => ({
   lookaheadSec: 3.0,
   showKeyLabels: true,
   showNoteLabels: false,
+  noteHighlightEnabled: true,
   performanceMode: false,
   qwertyPlayEnabled: false,
   previewStartMode: "peak",
@@ -178,6 +183,11 @@ export const useThemeStore = create<ThemeState>((set, get) => ({
 
   setShowNoteLabels: (showNoteLabels) => {
     set({ showNoteLabels });
+    persistAppearanceDebounced(get());
+  },
+
+  setNoteHighlightEnabled: (noteHighlightEnabled) => {
+    set({ noteHighlightEnabled });
     persistAppearanceDebounced(get());
   },
 
@@ -262,6 +272,8 @@ export const useThemeStore = create<ThemeState>((set, get) => ({
           lookaheadSec: parsed.lookaheadSec ?? state.lookaheadSec,
           showKeyLabels: parsed.showKeyLabels ?? state.showKeyLabels,
           showNoteLabels: parsed.showNoteLabels ?? state.showNoteLabels,
+          noteHighlightEnabled:
+            parsed.noteHighlightEnabled ?? state.noteHighlightEnabled,
           qwertyPlayEnabled: parsed.qwertyPlayEnabled ?? state.qwertyPlayEnabled,
           previewStartMode: parsed.previewStartMode ?? state.previewStartMode,
           previewAudioEnabled:

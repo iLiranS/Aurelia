@@ -67,6 +67,8 @@ pub enum AudioCommand {
         enabled: bool,
         wait_right: bool,
         wait_left: bool,
+        melody_only: bool,
+        mute_harmony_audio: bool,
     },
     SetStudyRange {
         skip_out_of_range: bool,
@@ -104,10 +106,12 @@ impl std::fmt::Debug for AudioCommand {
                 enabled,
                 wait_right,
                 wait_left,
+                melody_only,
+                mute_harmony_audio,
             } => write!(
                 f,
-                "AudioCommand::SetStudyMode({}, {}, {})",
-                enabled, wait_right, wait_left
+                "AudioCommand::SetStudyMode({}, {}, {}, {}, {})",
+                enabled, wait_right, wait_left, melody_only, mute_harmony_audio
             ),
             Self::SetStudyRange {
                 skip_out_of_range,
@@ -555,6 +559,7 @@ fn process_audio_block(
                 sequencer.track_hands = track_hands;
                 sequencer.split_point_midi = split_point_midi;
                 sequencer.use_split_point = use_split_point;
+                sequencer.mark_melody_mask_dirty();
             }
             AudioCommand::LiveNoteOn { key, velocity } => {
                 let shaped_vel = shape_velocity(velocity, sequencer.touch);
@@ -611,8 +616,16 @@ fn process_audio_block(
                 enabled,
                 wait_right,
                 wait_left,
+                melody_only,
+                mute_harmony_audio,
             } => {
-                sequencer.set_study_mode(enabled, wait_right, wait_left);
+                sequencer.set_study_mode(
+                    enabled,
+                    wait_right,
+                    wait_left,
+                    melody_only,
+                    mute_harmony_audio,
+                );
             }
             AudioCommand::SetStudyRange {
                 skip_out_of_range,
@@ -624,6 +637,7 @@ fn process_audio_block(
             AudioCommand::SetTranspose(semitones) => {
                 backend.all_notes_off();
                 sequencer.transpose_semitones = semitones.clamp(-12, 12);
+                sequencer.mark_melody_mask_dirty();
                 sequencer.clear_wait_state();
             }
             AudioCommand::SwapBackend(new_backend) => {
