@@ -23,10 +23,9 @@ import {
   PIANO_KEYS,
   WHITE_KEYS,
   getKeyDisplayLabel,
-  getKeyLeftEdgeX,
-  getKeyRightEdgeX,
   getKeySplitX,
   getNoteLetter,
+  getRangeBoundsX,
 } from "@/engine/pianoLayout";
 
 const C_WHITE_INDICES = [2, 9, 16, 23, 30, 37, 44, 51];
@@ -486,8 +485,9 @@ const ActiveRangeVeils: React.FC = () => {
     const isRangeActive = viewMode !== "home" && dimOutOfRange && keyCount < 88;
     const maxMidi = Math.min(108, minMidi + keyCount - 1);
 
-    const targetLeft = isRangeActive ? getKeyLeftEdgeX(minMidi) : 0;
-    const targetRight = isRangeActive ? getKeyRightEdgeX(maxMidi) : 52;
+    const bounds = isRangeActive ? getRangeBoundsX(minMidi, maxMidi) : null;
+    const targetLeft = bounds ? bounds.leftX : 0;
+    const targetRight = bounds ? bounds.rightX : 52;
 
     const alpha = Math.min(1, 14 * delta);
     currentLeftRef.current += (targetLeft - currentLeftRef.current) * alpha;
@@ -566,6 +566,12 @@ const ActiveRangeVeils: React.FC = () => {
 export const PianoStage: React.FC = () => {
   const showKeyLabels = useThemeStore((s) => s.showKeyLabels);
   const bgColor = useThemeStore((s) => s.bgColor);
+  const viewMode = useViewStore((s) => s.viewMode);
+  const minMidi = useMidiStore((s) => s.minMidi);
+  const keyCount = useMidiStore((s) => s.keyCount);
+  const dimOutOfRange = useMidiStore((s) => s.dimOutOfRange);
+  const isRangeActive = viewMode !== "home" && dimOutOfRange && keyCount < 88;
+  const maxMidi = Math.min(108, minMidi + keyCount - 1);
   const stageRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -791,10 +797,13 @@ export const PianoStage: React.FC = () => {
             {WHITE_KEYS.map((key) => {
               const isC = key.pitchClass === 0;
               const isMiddleC = key.midi === 60;
+              const isDimmed = isRangeActive && (key.midi < minMidi || key.midi > maxMidi);
               return (
                 <span
                   key={key.midi}
-                  className={`absolute bottom-0 font-sans -translate-x-1/2 leading-none tracking-tight ${
+                  className={`absolute bottom-0 font-sans -translate-x-1/2 leading-none tracking-tight transition-opacity ${
+                    isDimmed ? "opacity-20 " : ""
+                  }${
                     isMiddleC
                       ? "text-[11px] text-zinc-950 font-extrabold"
                       : isC
@@ -815,10 +824,13 @@ export const PianoStage: React.FC = () => {
           <div className="hidden lg:block absolute inset-0 pointer-events-none select-none z-10">
             {BLACK_KEYS.map((key) => {
               const letter = getNoteLetter(key.midi).charAt(0);
+              const isDimmed = isRangeActive && (key.midi < minMidi || key.midi > maxMidi);
               return (
                 <span
                   key={key.midi}
-                  className="absolute bottom-[7.6%] -translate-x-1/2 inline-flex items-start font-sans text-[9.5px] font-bold leading-none text-white/95 drop-shadow-[0_1px_2px_rgba(0,0,0,0.95)]"
+                  className={`absolute bottom-[7.6%] -translate-x-1/2 inline-flex items-start font-sans text-[9.5px] font-bold leading-none text-white/95 drop-shadow-[0_1px_2px_rgba(0,0,0,0.95)] transition-opacity ${
+                    isDimmed ? "opacity-20" : ""
+                  }`}
                   style={{
                     left: `${(key.centerX / 52) * 100}%`,
                   }}

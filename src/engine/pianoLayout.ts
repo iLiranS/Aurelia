@@ -155,6 +155,35 @@ export function getKeyRightEdgeX(midi: number): number {
 }
 
 /**
+ * Compute world-X bounds for the active keyboard range [minMidi, maxMidi].
+ * When a boundary falls on a white key adjacent to an out-of-range black key,
+ * clamp inward to the black key's inner edge so the veil and bracket do not
+ * bisect the out-of-range black key.
+ */
+export function getRangeBoundsX(
+  minMidi: number,
+  maxMidi: number
+): { leftX: number; rightX: number } {
+  let leftX = getKeyLeftEdgeX(minMidi);
+  if (minMidi > 21) {
+    const prevKey = getKeyByMidi(minMidi - 1);
+    if (prevKey?.isBlack) {
+      leftX = Math.max(leftX, prevKey.centerX + prevKey.width / 2);
+    }
+  }
+
+  let rightX = getKeyRightEdgeX(maxMidi);
+  if (maxMidi < 108) {
+    const nextKey = getKeyByMidi(maxMidi + 1);
+    if (nextKey?.isBlack) {
+      rightX = Math.min(rightX, nextKey.centerX - nextKey.width / 2);
+    }
+  }
+
+  return { leftX, rightX };
+}
+
+/**
  * Exact math hit-testing from normalized orthographic stage coordinates.
  * Stage dimensions: worldX in [0..52], relY in [0..1] where 0 is the hit-line (top of keys)
  * and 1 is the bottom of the keyboard. Black keys occupy the top 61% (relY <= 0.61).
