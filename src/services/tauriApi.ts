@@ -82,9 +82,14 @@ export async function audioSeek(timeSec: number): Promise<void> {
   await invoke("audio_seek", { timeSec });
 }
 
-export async function audioSetVolume(volume: number): Promise<void> {
+export async function audioSetSongVolume(volume: number): Promise<void> {
   if (!isTauri) return;
-  await invoke("audio_set_volume", { volume });
+  await invoke("audio_set_song_volume", { volume });
+}
+
+export async function audioSetLiveVolume(volume: number): Promise<void> {
+  if (!isTauri) return;
+  await invoke("audio_set_live_volume", { volume });
 }
 
 export async function audioSetTempo(tempoScale: number): Promise<void> {

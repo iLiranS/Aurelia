@@ -37,8 +37,9 @@ impl AudioBackend for RustySynthBackend {
     }
 
     fn all_notes_off(&mut self) {
-        // Release sustain pedal (CC64) first so freeplay/preview notes don't ring out indefinitely
+        // Release sustain pedal (CC64) on both Song (ch 0) and Live (ch 1) channels
         self.synth.process_midi_message(0, 0xB0, 64, 0);
+        self.synth.process_midi_message(1, 0xB0, 64, 0);
         self.synth.note_off_all(false);
     }
 
@@ -49,6 +50,7 @@ impl AudioBackend for RustySynthBackend {
 
 // Fallback synth with smooth envelope used when soundfont is not available or for tests
 struct SineVoice {
+    channel: i32,
     key: i32,
     phase: f32,
     phase_inc: f32,
@@ -60,7 +62,8 @@ struct SineVoice {
 pub struct SineFallbackBackend {
     sample_rate: f32,
     voices: Vec<SineVoice>,
-    sustain_pedal: bool,
+    sustain_pedal: [bool; 2],
+    channel_volume: [f32; 2],
 }
 
 impl SineFallbackBackend {
@@ -68,19 +71,29 @@ impl SineFallbackBackend {
         Self {
             sample_rate,
             voices: Vec::with_capacity(32),
-            sustain_pedal: false,
+            sustain_pedal: [false; 2],
+            channel_volume: [1.0; 2],
         }
+    }
+
+    #[inline]
+    fn ch_idx(channel: i32) -> usize {
+        if channel == 1 { 1 } else { 0 }
     }
 }
 
 impl AudioBackend for SineFallbackBackend {
-    fn note_on(&mut self, _channel: i32, key: i32, velocity: i32) {
+    fn note_on(&mut self, channel: i32, key: i32, velocity: i32) {
         let freq = 440.0 * 2.0f32.powf((key as f32 - 69.0) / 12.0);
         let phase_inc = (2.0 * PI * freq) / self.sample_rate;
         let amplitude = (velocity as f32 / 127.0).clamp(0.0, 1.0) * 0.25;
 
-        // Replace voice with same key or append
-        if let Some(existing) = self.voices.iter_mut().find(|v| v.key == key) {
+        // Replace voice with same channel+key or append
+        if let Some(existing) = self
+            .voices
+            .iter_mut()
+            .find(|v| v.channel == channel && v.key == key)
+        {
             existing.phase = 0.0;
             existing.phase_inc = phase_inc;
             existing.amplitude = amplitude;
@@ -88,6 +101,7 @@ impl AudioBackend for SineFallbackBackend {
             existing.is_released = false;
         } else {
             self.voices.push(SineVoice {
+                channel,
                 key,
                 phase: 0.0,
                 phase_inc,
@@ -98,31 +112,39 @@ impl AudioBackend for SineFallbackBackend {
         }
     }
 
-    fn note_off(&mut self, _channel: i32, key: i32) {
-        if let Some(voice) = self.voices.iter_mut().find(|v| v.key == key) {
+    fn note_off(&mut self, channel: i32, key: i32) {
+        let ch = Self::ch_idx(channel);
+        if let Some(voice) = self
+            .voices
+            .iter_mut()
+            .find(|v| v.channel == channel && v.key == key)
+        {
             voice.is_released = true;
-            if !self.sustain_pedal {
+            if !self.sustain_pedal[ch] {
                 voice.decay_rate = 0.992; // faster release
             }
         }
     }
 
-    fn control_change(&mut self, _channel: i32, controller: i32, value: i32) {
+    fn control_change(&mut self, channel: i32, controller: i32, value: i32) {
+        let ch = Self::ch_idx(channel);
         if controller == 64 {
-            let was_sustain = self.sustain_pedal;
-            self.sustain_pedal = value >= 64;
-            if was_sustain && !self.sustain_pedal {
+            let was_sustain = self.sustain_pedal[ch];
+            self.sustain_pedal[ch] = value >= 64;
+            if was_sustain && !self.sustain_pedal[ch] {
                 for voice in &mut self.voices {
-                    if voice.is_released {
+                    if Self::ch_idx(voice.channel) == ch && voice.is_released {
                         voice.decay_rate = 0.992;
                     }
                 }
             }
+        } else if controller == 7 {
+            self.channel_volume[ch] = (value as f32 / 127.0).clamp(0.0, 1.0);
         }
     }
 
     fn all_notes_off(&mut self) {
-        self.sustain_pedal = false;
+        self.sustain_pedal = [false; 2];
         for voice in &mut self.voices {
             voice.amplitude = 0.0;
         }
@@ -133,7 +155,8 @@ impl AudioBackend for SineFallbackBackend {
         for sample_idx in 0..left.len() {
             let mut mixed = 0.0f32;
             for voice in &mut self.voices {
-                mixed += (voice.phase).sin() * voice.amplitude;
+                let ch_gain = self.channel_volume[Self::ch_idx(voice.channel)];
+                mixed += (voice.phase).sin() * voice.amplitude * ch_gain;
                 voice.phase = (voice.phase + voice.phase_inc) % (2.0 * PI);
                 voice.amplitude *= voice.decay_rate;
             }

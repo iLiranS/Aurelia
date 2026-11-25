@@ -79,8 +79,19 @@ pub fn audio_seek(
 }
 
 #[tauri::command]
-pub fn audio_set_volume(engine: State<'_, AudioEngineHandle>, volume: f32) -> Result<(), String> {
-    engine.send(AudioCommand::SetVolume(volume))
+pub fn audio_set_song_volume(
+    engine: State<'_, AudioEngineHandle>,
+    volume: f32,
+) -> Result<(), String> {
+    engine.send(AudioCommand::SetSongVolume(volume))
+}
+
+#[tauri::command]
+pub fn audio_set_live_volume(
+    engine: State<'_, AudioEngineHandle>,
+    volume: f32,
+) -> Result<(), String> {
+    engine.send(AudioCommand::SetLiveVolume(volume))
 }
 
 #[tauri::command]

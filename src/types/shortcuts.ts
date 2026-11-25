@@ -65,14 +65,14 @@ export const SHORTCUT_DEFINITIONS: ShortcutDefinition[] = [
     id: "audio.volumeUp",
     category: "Playback",
     label: "Volume Up",
-    description: "Increase master volume by 5%",
+    description: "Increase volume by 5%",
     defaultBinding: "ArrowUp",
   },
   {
     id: "audio.volumeDown",
     category: "Playback",
     label: "Volume Down",
-    description: "Decrease master volume by 5%",
+    description: "Decrease volume by 5%",
     defaultBinding: "ArrowDown",
   },
 

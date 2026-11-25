@@ -27,7 +27,8 @@ pub enum AudioCommand {
     Play,
     Pause,
     Seek(f64),
-    SetVolume(f32),
+    SetSongVolume(f32),
+    SetLiveVolume(f32),
     SetTempo(f64),
     SetLoop {
         enabled: bool,
@@ -83,7 +84,8 @@ impl std::fmt::Debug for AudioCommand {
             Self::Play => write!(f, "AudioCommand::Play"),
             Self::Pause => write!(f, "AudioCommand::Pause"),
             Self::Seek(s) => write!(f, "AudioCommand::Seek({})", s),
-            Self::SetVolume(v) => write!(f, "AudioCommand::SetVolume({})", v),
+            Self::SetSongVolume(v) => write!(f, "AudioCommand::SetSongVolume({})", v),
+            Self::SetLiveVolume(v) => write!(f, "AudioCommand::SetLiveVolume({})", v),
             Self::SetTempo(t) => write!(f, "AudioCommand::SetTempo({})", t),
             Self::SetLoop { .. } => write!(f, "AudioCommand::SetLoop"),
             Self::SetHandFilters { .. } => write!(f, "AudioCommand::SetHandFilters"),
@@ -308,6 +310,11 @@ pub fn start_audio_engine(
     handle
 }
 
+#[inline]
+fn volume_to_cc7(volume: f32) -> i32 {
+    (volume.clamp(0.0, 1.0) * 127.0).round() as i32
+}
+
 fn load_soundfont(candidates: &[PathBuf]) -> Option<Arc<SoundFont>> {
     for path in candidates {
         if path.exists() {
@@ -371,6 +378,8 @@ fn run_audio_thread(
     };
 
     let mut sequencer = Sequencer::new();
+    backend.control_change(0, 7, volume_to_cc7(sequencer.song_volume));
+    backend.control_change(1, 7, volume_to_cc7(sequencer.live_volume));
     let mut dsp = StudioDsp::new(sample_rate as f32);
 
     // Off-thread drop channel: whenever a backend is swapped, old backend is sent here
@@ -487,26 +496,38 @@ fn process_audio_block(
                 settings,
             } => {
                 *is_preview_mode = false;
+                sequencer.volume = 1.0;
                 backend.all_notes_off();
+                backend.control_change(0, 7, volume_to_cc7(sequencer.song_volume));
                 sequencer.load_song(events, duration_sec, &settings);
             }
             AudioCommand::Play => {
                 *is_preview_mode = false;
+                sequencer.volume = 1.0;
                 sequencer.is_playing = true;
             }
             AudioCommand::Pause => {
                 *is_preview_mode = false;
+                sequencer.volume = 1.0;
                 sequencer.is_playing = false;
                 sequencer.clear_wait_state();
                 backend.all_notes_off();
             }
             AudioCommand::Seek(sec) => {
                 *is_preview_mode = false;
+                sequencer.volume = 1.0;
                 backend.all_notes_off();
                 sequencer.seek(sec);
             }
-            AudioCommand::SetVolume(vol) => {
-                sequencer.volume = vol;
+            AudioCommand::SetSongVolume(vol) => {
+                sequencer.song_volume = vol.clamp(0.0, 1.0);
+                if !*is_preview_mode {
+                    backend.control_change(0, 7, volume_to_cc7(sequencer.song_volume));
+                }
+            }
+            AudioCommand::SetLiveVolume(vol) => {
+                sequencer.live_volume = vol.clamp(0.0, 1.0);
+                backend.control_change(1, 7, volume_to_cc7(sequencer.live_volume));
             }
             AudioCommand::SetTempo(scale) => {
                 sequencer.tempo_scale = scale;
@@ -537,14 +558,14 @@ fn process_audio_block(
             }
             AudioCommand::LiveNoteOn { key, velocity } => {
                 let shaped_vel = shape_velocity(velocity, sequencer.touch);
-                backend.note_on(0, key as i32, shaped_vel as i32);
+                backend.note_on(1, key as i32, shaped_vel as i32);
                 sequencer.on_live_note_on(key);
             }
             AudioCommand::LiveNoteOff { key } => {
-                backend.note_off(0, key as i32);
+                backend.note_off(1, key as i32);
             }
             AudioCommand::LiveControlChange { controller, value } => {
-                backend.control_change(0, controller as i32, value as i32);
+                backend.control_change(1, controller as i32, value as i32);
             }
             AudioCommand::LiveAllNotesOff => {
                 backend.all_notes_off();
@@ -558,6 +579,7 @@ fn process_audio_block(
                 *is_preview_mode = true;
                 *preview_end_sec = start_sec + duration_sec;
                 backend.all_notes_off();
+                backend.control_change(0, 7, 127);
                 let preview_settings = SongSettings::default();
                 let max_dur = if events.is_empty() {
                     0.0
@@ -576,7 +598,9 @@ fn process_audio_block(
                     *is_preview_mode = false;
                     sequencer.preview_bypass_study = false;
                     sequencer.is_playing = false;
+                    sequencer.volume = 1.0;
                     backend.all_notes_off();
+                    backend.control_change(0, 7, volume_to_cc7(sequencer.song_volume));
                 }
             }
             AudioCommand::SetSoundProfile(profile) => {
@@ -605,6 +629,13 @@ fn process_audio_block(
             AudioCommand::SwapBackend(new_backend) => {
                 backend.all_notes_off();
                 let old = std::mem::replace(backend, new_backend);
+                let ch0_cc7 = if *is_preview_mode {
+                    127
+                } else {
+                    volume_to_cc7(sequencer.song_volume)
+                };
+                backend.control_change(0, 7, ch0_cc7);
+                backend.control_change(1, 7, volume_to_cc7(sequencer.live_volume));
                 let _ = drop_tx.try_send(old);
             }
         }
@@ -642,7 +673,9 @@ fn process_audio_block(
     if *is_preview_mode && sequencer.song_time_sec >= *preview_end_sec {
         *is_preview_mode = false;
         sequencer.is_playing = false;
+        sequencer.volume = 1.0;
         backend.all_notes_off();
+        backend.control_change(0, 7, volume_to_cc7(sequencer.song_volume));
     }
 
     // 4. Interleave into output stream buffer

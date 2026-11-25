@@ -1,16 +1,29 @@
 import { create } from "zustand";
 import type { HandRole, TimeSignatureEvent } from "@/types/midi";
-import { audioPlay, audioSetVolume, setAppSetting } from "@/services/tauriApi";
+import {
+  audioPlay,
+  audioSetLiveVolume,
+  audioSetSongVolume,
+  setAppSetting,
+} from "@/services/tauriApi";
 import { countInEngine } from "@/engine/countIn";
 import { playbackClock } from "@/engine/playbackClock";
 import { useLibraryStore } from "@/stores/useLibraryStore";
 
-let volumeSaveTimeout: ReturnType<typeof setTimeout> | null = null;
+let songVolumeSaveTimeout: ReturnType<typeof setTimeout> | null = null;
+let liveVolumeSaveTimeout: ReturnType<typeof setTimeout> | null = null;
 
-function debouncedSaveVolume(volume: number) {
-  if (volumeSaveTimeout) clearTimeout(volumeSaveTimeout);
-  volumeSaveTimeout = setTimeout(() => {
-    setAppSetting("master_volume_v1", String(volume)).catch(() => {});
+function debouncedSaveSongVolume(volume: number) {
+  if (songVolumeSaveTimeout) clearTimeout(songVolumeSaveTimeout);
+  songVolumeSaveTimeout = setTimeout(() => {
+    setAppSetting("song_volume_v1", String(volume)).catch(() => {});
+  }, 300);
+}
+
+function debouncedSaveLiveVolume(volume: number) {
+  if (liveVolumeSaveTimeout) clearTimeout(liveVolumeSaveTimeout);
+  liveVolumeSaveTimeout = setTimeout(() => {
+    setAppSetting("live_volume_v1", String(volume)).catch(() => {});
   }, 300);
 }
 
@@ -20,7 +33,8 @@ interface PlaybackState {
   initialBpm: number;
   tempoScale: number;
   transposeSemitones: number;
-  volume: number;
+  songVolume: number;
+  liveVolume: number;
   rightHandActive: boolean;
   leftHandActive: boolean;
   trackHands: Record<number, HandRole>;
@@ -41,8 +55,10 @@ interface PlaybackState {
   setInitialBpm: (bpm: number) => void;
   setTempoScale: (scale: number) => void;
   setTransposeSemitones: (semitones: number) => void;
-  setVolume: (volume: number) => void;
-  hydrateVolume: (rawValue: string) => void;
+  setSongVolume: (volume: number) => void;
+  hydrateSongVolume: (rawValue: string) => void;
+  setLiveVolume: (volume: number) => void;
+  hydrateLiveVolume: (rawValue: string) => void;
   setRightHandActive: (active: boolean) => void;
   setLeftHandActive: (active: boolean) => void;
   toggleRightHand: () => void;
@@ -73,7 +89,8 @@ export const usePlaybackStore = create<PlaybackState>((set) => ({
   initialBpm: 120,
   tempoScale: 1.0,
   transposeSemitones: 0,
-  volume: 0.85,
+  songVolume: 1.0,
+  liveVolume: 1.0,
   rightHandActive: true,
   leftHandActive: true,
   trackHands: {},
@@ -95,17 +112,29 @@ export const usePlaybackStore = create<PlaybackState>((set) => ({
   setTempoScale: (tempoScale) => set({ tempoScale }),
   setTransposeSemitones: (semitones) =>
     set({ transposeSemitones: Math.max(-12, Math.min(12, Math.round(semitones))) }),
-  setVolume: (volume) => {
+  setSongVolume: (volume) => {
     const clamped = Math.max(0, Math.min(1, volume));
-    set({ volume: clamped });
-    debouncedSaveVolume(clamped);
+    set({ songVolume: clamped });
+    debouncedSaveSongVolume(clamped);
   },
-  hydrateVolume: (rawValue) => {
+  hydrateSongVolume: (rawValue) => {
     const parsed = Number(rawValue);
     if (!Number.isFinite(parsed)) return;
     const clamped = Math.max(0, Math.min(1, parsed));
-    set({ volume: clamped });
-    audioSetVolume(clamped).catch(() => {});
+    set({ songVolume: clamped });
+    audioSetSongVolume(clamped).catch(() => {});
+  },
+  setLiveVolume: (volume) => {
+    const clamped = Math.max(0, Math.min(1, volume));
+    set({ liveVolume: clamped });
+    debouncedSaveLiveVolume(clamped);
+  },
+  hydrateLiveVolume: (rawValue) => {
+    const parsed = Number(rawValue);
+    if (!Number.isFinite(parsed)) return;
+    const clamped = Math.max(0, Math.min(1, parsed));
+    set({ liveVolume: clamped });
+    audioSetLiveVolume(clamped).catch(() => {});
   },
   setRightHandActive: (rightHandActive) => set({ rightHandActive }),
   setLeftHandActive: (leftHandActive) => set({ leftHandActive }),

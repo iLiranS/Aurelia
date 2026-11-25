@@ -14,7 +14,8 @@ import {
   audioPause,
   audioPlay,
   audioSeek,
-  audioSetVolume,
+  audioSetLiveVolume,
+  audioSetSongVolume,
   audioStopPreview,
 } from "@/services/tauriApi";
 import { useViewStore } from "@/stores/useViewStore";
@@ -47,6 +48,60 @@ const QWERTY_PIANO_CODES = [
   "KeyU",
   "KeyI",
 ];
+
+async function adjustGlobalVolume(delta: number, viewMode: string): Promise<void> {
+  const playback = usePlaybackStore.getState();
+
+  if (viewMode !== "song") {
+    const nextLive = Math.max(
+      0,
+      Math.min(1, Math.round((playback.liveVolume + delta) * 100) / 100)
+    );
+    playback.setLiveVolume(nextLive);
+    showVolumeToast(nextLive, "Keyboard");
+    await audioSetLiveVolume(nextLive).catch(() => {});
+    return;
+  }
+
+  const { songVolume, liveVolume } = playback;
+  const currentMax = Math.max(songVolume, liveVolume);
+  let nextSong: number;
+  let nextLive: number;
+
+  if (currentMax <= 0) {
+    const step = Math.max(0, Math.min(1, Math.round(delta * 100) / 100));
+    nextSong = step;
+    nextLive = step;
+  } else {
+    const targetMax = Math.max(
+      0,
+      Math.min(1, Math.round((currentMax + delta) * 100) / 100)
+    );
+    const scale = targetMax / currentMax;
+    nextSong = Math.max(
+      0,
+      Math.min(1, Math.round(songVolume * scale * 1000) / 1000)
+    );
+    nextLive = Math.max(
+      0,
+      Math.min(1, Math.round(liveVolume * scale * 1000) / 1000)
+    );
+  }
+
+  playback.setSongVolume(nextSong);
+  playback.setLiveVolume(nextLive);
+
+  const songPct = Math.round(nextSong * 100);
+  const livePct = Math.round(nextLive * 100);
+  const toastDesc =
+    songPct === livePct ? `${livePct}%` : `Song ${songPct}% · Keys ${livePct}%`;
+  showVolumeToast(Math.max(nextSong, nextLive), "Volume", toastDesc);
+
+  await Promise.all([
+    audioSetSongVolume(nextSong).catch(() => {}),
+    audioSetLiveVolume(nextLive).catch(() => {}),
+  ]);
+}
 
 export function useGlobalShortcuts(): void {
   useEffect(() => {
@@ -272,18 +327,12 @@ export function useGlobalShortcuts(): void {
         }
 
         case "audio.volumeUp": {
-          const nextVol = Math.min(1, Math.round((playback.volume + 0.05) * 100) / 100);
-          playback.setVolume(nextVol);
-          showVolumeToast(nextVol);
-          await audioSetVolume(nextVol).catch(() => {});
+          await adjustGlobalVolume(0.05, viewMode);
           break;
         }
 
         case "audio.volumeDown": {
-          const nextVol = Math.max(0, Math.round((playback.volume - 0.05) * 100) / 100);
-          playback.setVolume(nextVol);
-          showVolumeToast(nextVol);
-          await audioSetVolume(nextVol).catch(() => {});
+          await adjustGlobalVolume(-0.05, viewMode);
           break;
         }
 

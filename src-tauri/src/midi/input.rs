@@ -17,7 +17,7 @@ pub struct MidiDeviceInfo {
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct MidiLiveEventPayload {
-    pub kind: &'static str, // "noteOn" | "noteOff" | "sustain"
+    pub kind: &'static str, // "noteOn" | "noteOff" | "sustain" | "volume"
     pub midi: u8,
     pub velocity: u8,
 }
@@ -27,6 +27,7 @@ pub enum ParsedMidiMsg {
     NoteOn { key: u8, velocity: u8 },
     NoteOff { key: u8 },
     Sustain { value: u8 },
+    Volume { value: u8 },
 }
 
 /// Infer keyboard key count from a USB MIDI device name when possible.
@@ -83,10 +84,10 @@ pub fn parse_midi_message(msg: &[u8]) -> Option<ParsedMidiMsg> {
             }
             let controller = msg[1] & 0x7F;
             let value = msg[2] & 0x7F;
-            if controller == 64 {
-                Some(ParsedMidiMsg::Sustain { value })
-            } else {
-                None
+            match controller {
+                64 => Some(ParsedMidiMsg::Sustain { value }),
+                7 => Some(ParsedMidiMsg::Volume { value }),
+                _ => None,
             }
         }
         _ => None,
@@ -186,6 +187,18 @@ impl MidiInputManager {
                                     MidiLiveEventPayload {
                                         kind: "sustain",
                                         midi: 64,
+                                        velocity: value,
+                                    },
+                                );
+                            }
+                            ParsedMidiMsg::Volume { value } => {
+                                let normalized = (value as f32) / 127.0;
+                                let _ = engine_cb.send(AudioCommand::SetLiveVolume(normalized));
+                                let _ = app_cb.emit(
+                                    "midi:live-event",
+                                    MidiLiveEventPayload {
+                                        kind: "volume",
+                                        midi: 7,
                                         velocity: value,
                                     },
                                 );
@@ -306,6 +319,22 @@ mod tests {
         );
         // Other CCs (e.g. modulation CC1) are ignored
         assert_eq!(parse_midi_message(&[0xB0, 1, 64]), None);
+    }
+
+    #[test]
+    fn parses_volume_slider_cc7() {
+        assert_eq!(
+            parse_midi_message(&[0xB0, 7, 100]),
+            Some(ParsedMidiMsg::Volume { value: 100 })
+        );
+        assert_eq!(
+            parse_midi_message(&[0xB2, 7, 0]),
+            Some(ParsedMidiMsg::Volume { value: 0 })
+        );
+        assert_eq!(
+            parse_midi_message(&[0xB0, 7, 127]),
+            Some(ParsedMidiMsg::Volume { value: 127 })
+        );
     }
 
     #[test]

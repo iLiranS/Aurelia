@@ -171,10 +171,14 @@ export const App: React.FC = () => {
           audioSetSoundProfile({ reverbMix, touch }).catch(() => {});
         }
 
-        // Hydrate saved master volume from SQLite
-        const savedVolume = await getAppSetting("master_volume_v1");
-        if (savedVolume !== null) {
-          usePlaybackStore.getState().hydrateVolume(savedVolume);
+        // Hydrate saved song and live keyboard volumes from SQLite
+        const savedSongVolume = await getAppSetting("song_volume_v1");
+        if (savedSongVolume !== null) {
+          usePlaybackStore.getState().hydrateSongVolume(savedSongVolume);
+        }
+        const savedLiveVolume = await getAppSetting("live_volume_v1");
+        if (savedLiveVolume !== null) {
+          usePlaybackStore.getState().hydrateLiveVolume(savedLiveVolume);
         }
 
         // Hydrate saved count-in bars from SQLite

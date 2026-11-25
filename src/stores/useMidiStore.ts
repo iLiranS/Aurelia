@@ -4,6 +4,7 @@ import { activeNotes } from "@/engine/activeNotes";
 import { freeplayNotes } from "@/engine/freeplayNotes";
 import { usePlaybackStore } from "@/stores/usePlaybackStore";
 import { useViewStore } from "@/stores/useViewStore";
+import { showVolumeToast } from "@/components/ui/toast";
 import {
   audioSetStudyRange,
   connectMidiDevice,
@@ -305,6 +306,10 @@ export const useMidiStore = create<MidiState>((set, get) => ({
     } else if (payload.kind === "sustain") {
       set({ sustainDown: payload.velocity >= 64 });
       freeplayNotes.recordSustain(payload.velocity);
+    } else if (payload.kind === "volume") {
+      const normalized = Math.max(0, Math.min(1, payload.velocity / 127));
+      usePlaybackStore.getState().setLiveVolume(normalized);
+      showVolumeToast(normalized, "Keyboard");
     }
   },
 

@@ -59,15 +59,19 @@ export const useToastStore = create<ToastState>((set) => ({
   },
 }));
 
-export function showVolumeToast(volume: number): void {
+export function showVolumeToast(
+  volume: number,
+  label = "Volume",
+  descriptionOverride?: string
+): void {
   const pct = Math.round(volume * 100);
   const icon: ToastItem["icon"] =
     pct === 0 ? "volume-mute" : pct < 45 ? "volume-low" : "volume-high";
 
   useToastStore.getState().showToast({
     id: "volume",
-    title: "Volume",
-    description: `${pct}%`,
+    title: label,
+    description: descriptionOverride ?? `${pct}%`,
     icon,
     durationMs: 1400,
   });

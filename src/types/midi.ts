@@ -93,7 +93,7 @@ export interface MidiDeviceInfo {
 }
 
 export interface MidiLiveEventPayload {
-  kind: 'noteOn' | 'noteOff' | 'sustain';
+  kind: 'noteOn' | 'noteOff' | 'sustain' | 'volume';
   midi: number;
   velocity: number;
 }
